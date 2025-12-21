@@ -1,10 +1,10 @@
 {
-	"id": "my-plugin",
-	"name": "My Plugin",
+	"id": "obsidian-concept-map",
+	"name": "Concept Map",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "An Obsidian plugin.",
-	"author": "Your Name",
-	"authorUrl": "https://github.com/yourusername",
+	"description": "Generate concept maps from simple arrow syntax statements like Subject -> verb -> Object",
+	"author": "Remy Honig",
+	"authorUrl": "https://github.com/remyhonig",
 	"isDesktopOnly": false
 }
