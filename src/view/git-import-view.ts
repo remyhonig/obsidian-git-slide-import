@@ -1,8 +1,11 @@
 /**
- * Main modal dialog for importing git commits as slides
+ * Main view for importing git commits as slides
+ * Opens as an editor tab instead of a modal
  */
 
-import { App, Modal, Notice, Setting, MarkdownView, debounce } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, Setting, debounce, ViewStateResult } from 'obsidian';
+import type GitSlideImportPlugin from '../main';
+import { GIT_IMPORT_VIEW_TYPE } from './constants';
 import { GitService } from '../git-slides/git-service';
 import {
 	SlideGenerator,
@@ -21,7 +24,6 @@ import type {
 	SlideOrganization,
 	TimePeriod
 } from '../git-slides/types';
-import type { SlideFormatDefaults } from '../settings';
 
 /** File status icons matching GitHub's PR view style */
 const FILE_STATUS_ICONS: Record<GitFileChange['status'], { icon: string; cls: string; title: string }> = {
@@ -94,11 +96,12 @@ const FILTER_PRESETS: FilterPreset[] = [
 /** Which column is currently focused for keyboard navigation */
 type FocusedColumn = 'commits' | 'files';
 
-export class GitImportModal extends Modal {
-	private formatDefaults: SlideFormatDefaults;
+export class GitImportView extends ItemView {
+	private plugin: GitSlideImportPlugin;
 
 	// State
 	private repoPath: string | null = null;
+	private repoName: string = 'Git Import';
 	private gitService: GitService | null = null;
 	private branches: string[] = [];
 	private commits: GitCommit[] = [];
@@ -164,42 +167,73 @@ export class GitImportModal extends Modal {
 		true
 	);
 
-	constructor(app: App, formatDefaults: SlideFormatDefaults) {
-		super(app);
-		this.formatDefaults = formatDefaults;
+	constructor(leaf: WorkspaceLeaf, plugin: GitSlideImportPlugin) {
+		super(leaf);
+		this.plugin = plugin;
 		this.formatOptions = this.createFormatOptionsFromDefaults();
+	}
+
+	getViewType(): string {
+		return GIT_IMPORT_VIEW_TYPE;
+	}
+
+	getDisplayText(): string {
+		return this.repoName;
+	}
+
+	getIcon(): string {
+		return 'git-branch';
+	}
+
+	// State persistence (repo path only)
+	getState(): Record<string, unknown> {
+		return { repoPath: this.repoPath };
+	}
+
+	async setState(state: unknown, result: ViewStateResult): Promise<void> {
+		const s = state as { repoPath?: string };
+		if (s?.repoPath) {
+			// Defer opening until after UI is built
+			await new Promise(resolve => setTimeout(resolve, 100));
+			await this.openRepository(s.repoPath);
+		}
+		result.history = false;
 	}
 
 	private createFormatOptionsFromDefaults(): SlideFormatOptions {
 		const defaults = createDefaultFormatOptions();
+		const formatDefaults = this.plugin.settings.formatDefaults;
 		return {
 			...defaults,
-			highlightAddedLines: this.formatDefaults.highlightAddedLines,
-			highlightMode: this.formatDefaults.highlightMode,
-			showFullFile: this.formatDefaults.showFullFile,
-			contextLines: this.formatDefaults.contextLines,
-			includeCommitMessage: this.formatDefaults.includeCommitMessage,
-			includeFileSummary: this.formatDefaults.includeFileSummary,
-			slideOrganization: this.formatDefaults.slideOrganization,
-			commitDetailsTemplate: this.formatDefaults.commitDetailsTemplate,
-			slideTemplate: this.formatDefaults.slideTemplate,
-			dateFormat: this.formatDefaults.dateFormat
+			highlightAddedLines: formatDefaults.highlightAddedLines,
+			highlightMode: formatDefaults.highlightMode,
+			showFullFile: formatDefaults.showFullFile,
+			contextLines: formatDefaults.contextLines,
+			includeCommitMessage: formatDefaults.includeCommitMessage,
+			includeFileSummary: formatDefaults.includeFileSummary,
+			slideOrganization: formatDefaults.slideOrganization,
+			commitDetailsTemplate: formatDefaults.commitDetailsTemplate,
+			slideTemplate: formatDefaults.slideTemplate,
+			dateFormat: formatDefaults.dateFormat
 		};
 	}
 
-	onOpen(): void {
-		this.modalEl.addClass('git-import-modal');
-		this.setTitle('Import Git commits as slides');
+	async onOpen(): Promise<void> {
+		this.containerEl.addClass('git-import-view');
 		this.buildUI();
 		this.setupKeyboardNavigation();
+		await Promise.resolve();
 	}
 
-	onClose(): void {
+	async onClose(): Promise<void> {
 		this.contentEl.empty();
+		this.gitService = null;
+		this.previewCache.clear();
+		await Promise.resolve();
 	}
 
 	private setupKeyboardNavigation(): void {
-		this.modalEl.addEventListener('keydown', (e: KeyboardEvent) => {
+		this.containerEl.addEventListener('keydown', (e: KeyboardEvent) => {
 			// Don't intercept if focus is on an input element
 			const target = e.target as HTMLElement;
 			if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') {
@@ -380,9 +414,6 @@ export class GitImportModal extends Modal {
 
 		// Four-panel content area
 		this.buildPanels(contentEl);
-
-		// Footer with buttons and keyboard hints
-		this.buildFooter(contentEl);
 	}
 
 	private buildFilterSection(container: HTMLElement): void {
@@ -541,6 +572,14 @@ export class GitImportModal extends Modal {
 			cls: 'git-import-preview-tab'
 		});
 
+		// Copy button on the right side of the header
+		this.importBtn = previewHeader.createEl('button', {
+			text: 'Copy',
+			cls: 'git-import-copy-btn'
+		});
+		this.importBtn.disabled = true;
+		this.importBtn.addEventListener('click', () => void this.copyToClipboard());
+
 		slidesTab.addEventListener('click', () => {
 			this.activePreviewTab = 'slides';
 			slidesTab.addClass('active');
@@ -697,35 +736,13 @@ export class GitImportModal extends Modal {
 		const dateFormatEl = container.createDiv({ cls: 'git-import-setting' });
 		new Setting(dateFormatEl)
 			.setName('Date format')
-			.setDesc('Use: yyyy, MMM/MMMM, d/dd, HH:mm')
+			.setDesc('Date formatting pattern.')
 			.addText(text => text
 				.setValue(this.formatOptions.dateFormat)
-				.setPlaceholder('MMM d, yyyy')
 				.onChange(value => {
 					this.formatOptions.dateFormat = value;
 					this.debouncedUpdatePreview();
 				}));
-	}
-
-	private buildFooter(container: HTMLElement): void {
-		const footer = container.createDiv({ cls: 'git-import-footer' });
-
-		// Keyboard hints on the left
-		const hint = footer.createDiv({ cls: 'git-import-keyboard-hint' });
-		hint.setText('↑↓ navigate • ←→ switch columns • space select');
-
-		// Buttons on the right
-		const buttons = footer.createDiv({ cls: 'git-import-footer-buttons' });
-
-		const cancelBtn = buttons.createEl('button', { text: 'Cancel' });
-		cancelBtn.addEventListener('click', () => this.close());
-
-		this.importBtn = buttons.createEl('button', {
-			text: 'Import to note',
-			cls: 'mod-cta'
-		});
-		this.importBtn.disabled = true;
-		this.importBtn.addEventListener('click', () => void this.doImport());
 	}
 
 	private async selectRepository(): Promise<void> {
@@ -776,11 +793,15 @@ export class GitImportModal extends Modal {
 			return;
 		}
 
+		// Update tab title with repo name
+		const segments = path.split(/[/\\]/);
+		this.repoName = segments[segments.length - 1] || 'Git Import';
+		// Trigger Obsidian to refresh the tab header
+		(this.leaf as { updateHeader?: () => void }).updateHeader?.();
+
 		if (this.repoBtn) {
 			// Show last part of path in button
-			const segments = path.split(/[/\\]/);
-			const repoName = segments[segments.length - 1] || 'Repository';
-			this.repoBtn.setText(repoName);
+			this.repoBtn.setText(this.repoName);
 			this.repoBtn.setAttribute('title', path); // Full path on hover
 			this.repoBtn.addClass('has-repo');
 		}
@@ -1573,7 +1594,7 @@ export class GitImportModal extends Modal {
 				// Numbers
 				{ pattern: /\b\d+\.?\d*\b/, className: 'hl-number' },
 				// Operators and punctuation
-				{ pattern: /[{}()\[\];,.]/, className: 'hl-punctuation' },
+				{ pattern: /[{}()[\];,.]/, className: 'hl-punctuation' },
 				{ pattern: /[+\-*/%=<>!&|^~?:]+/, className: 'hl-operator' },
 			];
 
@@ -1584,7 +1605,6 @@ export class GitImportModal extends Modal {
 		}
 
 		let remaining = line;
-		let pos = 0;
 
 		while (remaining.length > 0) {
 			let matched = false;
@@ -1724,7 +1744,7 @@ export class GitImportModal extends Modal {
 		container.createSpan({ cls: 'hl-string', text: value });
 	}
 
-	private async doImport(): Promise<void> {
+	private async copyToClipboard(): Promise<void> {
 		if (!this.gitService) return;
 
 		const selectedCommits = this.commits.filter(c => this.selectedCommitHashes.has(c.hash));
@@ -1769,22 +1789,12 @@ export class GitImportModal extends Modal {
 			const generator = new SlideGenerator(this.formatOptions);
 			const markdown = generator.generateSlides(selectedCommits, fileDiffs);
 
-			const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+			await navigator.clipboard.writeText(markdown);
+			new Notice(`Copied ${selectedCommits.length} commit(s) as slides`);
 
-			if (activeView?.editor) {
-				const editor = activeView.editor;
-				const cursor = editor.getCursor();
-				editor.replaceRange(markdown, cursor);
-				new Notice(`Imported ${selectedCommits.length} commit(s) as slides`);
-			} else {
-				await navigator.clipboard.writeText(markdown);
-				new Notice('No active note. Slides copied to clipboard.');
-			}
-
-			this.close();
 		} catch (error) {
-			console.error('Import failed:', error);
-			new Notice('Failed to import commits. Check console for details.');
+			console.error('Copy failed:', error);
+			new Notice('Failed to copy slides. Check console for details.');
 		}
 	}
 
