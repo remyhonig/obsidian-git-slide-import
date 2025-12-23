@@ -42,6 +42,11 @@ interface FilterPreset {
 
 const FILTER_PRESETS: FilterPreset[] = [
 	{
+		name: 'All files',
+		include: '',
+		exclude: ''
+	},
+	{
 		name: 'JavaScript/TypeScript',
 		include: '\\.(ts|js|tsx|jsx|mjs|cjs|json|yaml|yml)$',
 		exclude: '(node_modules|dist|build|\\.min\\.|package-lock\\.json|yarn\\.lock|pnpm-lock\\.yaml)$'
@@ -125,8 +130,9 @@ export class GitImportView extends ItemView {
 	}
 
 	// File filter patterns
+	// Default to "All files" preset (no filters)
 	private includePattern = '';
-	private excludePattern = '(node_modules|vendor|dist|build|\\.min\\.|package-lock\\.json|composer\\.lock|yarn\\.lock|pnpm-lock\\.yaml|Cargo\\.lock|Gemfile\\.lock|poetry\\.lock)$';
+	private excludePattern = '';
 
 	// Keyboard navigation state
 	private focusedColumn: FocusedColumn = 'commits';
@@ -424,6 +430,14 @@ export class GitImportView extends ItemView {
 		this.markdownPreviewEl?.removeClass('is-hidden');
 	}
 
+	private renderEmptyState(container: HTMLElement, icon: string, message: string): void {
+		container.empty();
+		const emptyState = container.createDiv({ cls: 'git-import-empty-state' });
+		const iconEl = emptyState.createDiv({ cls: 'git-import-empty-icon' });
+		setIcon(iconEl, icon);
+		emptyState.createDiv({ cls: 'git-import-empty-message', text: message });
+	}
+
 	private updateFocusHighlight(): void {
 		// Remove all focus highlights from list items
 		this.commitListEl?.querySelectorAll('.git-import-commit').forEach(el => {
@@ -539,11 +553,10 @@ export class GitImportView extends ItemView {
 
 		// Preset selector
 		const presetGroup = section.createDiv({ cls: 'git-import-filter-group' });
-		presetGroup.createEl('label', { text: 'Preset:' });
 		const presetSelect = presetGroup.createEl('select');
-		presetSelect.createEl('option', { text: '(custom)', value: '' });
 		for (const preset of FILTER_PRESETS) {
-			presetSelect.createEl('option', { text: preset.name, value: preset.name });
+			const opt = presetSelect.createEl('option', { text: preset.name, value: preset.name });
+			if (preset.name === 'All files') opt.selected = true;
 		}
 		presetSelect.addEventListener('change', () => {
 			const preset = FILTER_PRESETS.find(p => p.name === presetSelect.value);
@@ -607,7 +620,7 @@ export class GitImportView extends ItemView {
 		this.commitPanelEl.createDiv({ cls: 'git-import-panel-header', text: 'Commits' });
 		this.commitListEl = this.commitPanelEl.createDiv({ cls: 'git-import-panel-content' });
 		this.commitListEl.setAttribute('tabindex', '0');
-		this.commitListEl.setText('Select a repository to see commits');
+		this.renderEmptyState(this.commitListEl, 'folder-open', 'Select a repository');
 
 		// Files section (bottom half)
 		this.filePanelEl = this.selectionPanelEl.createDiv({ cls: 'git-import-section git-import-section-files' });
@@ -617,7 +630,7 @@ export class GitImportView extends ItemView {
 		// File list area
 		this.fileListEl = this.filePanelEl.createDiv({ cls: 'git-import-panel-content git-import-file-list' });
 		this.fileListEl.setAttribute('tabindex', '0');
-		this.fileListEl.setText('Select a commit to see files');
+		this.renderEmptyState(this.fileListEl, 'git-commit', 'Select a commit');
 		// Diff preview area at bottom
 		this.fileDiffPreviewEl = this.filePanelEl.createDiv({ cls: 'git-import-file-diff is-hidden' });
 		this.fileDiffPreviewEl.createDiv({ cls: 'git-import-file-diff-header', text: 'Diff' });
@@ -654,11 +667,11 @@ export class GitImportView extends ItemView {
 
 		// Slides preview (visual)
 		this.slidesPreviewEl = this.previewEl.createDiv({ cls: 'git-import-slides-preview' });
-		this.slidesPreviewEl.setText('Select commits and files to see preview');
+		this.renderEmptyState(this.slidesPreviewEl, 'presentation', 'Select commits and files');
 
 		// Markdown preview (raw code)
 		this.markdownPreviewEl = this.previewEl.createDiv({ cls: 'git-import-markdown-preview is-hidden' });
-		this.markdownPreviewEl.setText('Select commits and files to see preview');
+		this.renderEmptyState(this.markdownPreviewEl, 'code', 'Select commits and files');
 
 		// Column 3: Render (settings + copy button)
 		this.renderPanelEl = panels.createDiv({ cls: 'git-import-panel git-import-panel-render' });
@@ -884,8 +897,7 @@ export class GitImportView extends ItemView {
 
 		// Clear UI panels
 		if (this.fileListEl) {
-			this.fileListEl.empty();
-			this.fileListEl.setText('Select a commit to see files');
+			this.renderEmptyState(this.fileListEl, 'git-commit', 'Select a commit');
 		}
 		if (this.fileCommitMessageEl) {
 			this.fileCommitMessageEl.empty();
@@ -893,12 +905,10 @@ export class GitImportView extends ItemView {
 		}
 		this.hideDiffPreview();
 		if (this.slidesPreviewEl) {
-			this.slidesPreviewEl.empty();
-			this.slidesPreviewEl.setText('Select commits and files to see preview');
+			this.renderEmptyState(this.slidesPreviewEl, 'presentation', 'Select commits and files');
 		}
 		if (this.markdownPreviewEl) {
-			this.markdownPreviewEl.empty();
-			this.markdownPreviewEl.setText('Select commits and files to see preview');
+			this.renderEmptyState(this.markdownPreviewEl, 'code', 'Select commits and files');
 		}
 		this.updateImportButton();
 
@@ -931,7 +941,11 @@ export class GitImportView extends ItemView {
 
 		try {
 			this.branches = await this.gitService.getLocalBranches();
-			const currentBranch = await this.gitService.getCurrentBranch();
+
+			// Prefer main/master, fall back to current branch
+			const defaultBranch = this.branches.find(b => b === 'main')
+				?? this.branches.find(b => b === 'master')
+				?? await this.gitService.getCurrentBranch();
 
 			this.branchSelectEl.empty();
 
@@ -939,7 +953,7 @@ export class GitImportView extends ItemView {
 				text: '(all branches)',
 				value: ''
 			});
-			if (!this.filter.branch) {
+			if (!this.filter.branch && !defaultBranch) {
 				allOption.selected = true;
 			}
 
@@ -948,7 +962,7 @@ export class GitImportView extends ItemView {
 					text: branch,
 					value: branch
 				});
-				if (branch === currentBranch && !this.filter.branch) {
+				if (branch === defaultBranch && !this.filter.branch) {
 					option.selected = true;
 					this.filter.branch = branch;
 				}
@@ -1264,10 +1278,8 @@ export class GitImportView extends ItemView {
 		}
 
 		if (selectedCommits.length === 0 || !hasFiles) {
-			this.slidesPreviewEl.empty();
-			this.slidesPreviewEl.setText('Select commits and files to see preview');
-			this.markdownPreviewEl.empty();
-			this.markdownPreviewEl.setText('Select commits and files to see preview');
+			this.renderEmptyState(this.slidesPreviewEl, 'presentation', 'Select commits and files');
+			this.renderEmptyState(this.markdownPreviewEl, 'code', 'Select commits and files');
 			this.updateSlideCountBadge(0);
 			return;
 		}
