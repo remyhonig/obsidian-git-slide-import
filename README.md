@@ -2,6 +2,8 @@
 
 Create presentation slides from git commits. Built for software engineers who present code.
 
+![Git Slide Import screenshot](screenshot-git-slide-import.png)
+
 ## The Problem
 
 You're preparing a talk or demo where you need to walk through code changes. Maybe you're:
