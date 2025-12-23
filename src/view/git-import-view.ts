@@ -3,7 +3,7 @@
  * Opens as an editor tab instead of a modal
  */
 
-import { ItemView, WorkspaceLeaf, Notice, Setting, debounce, ViewStateResult } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, Setting, debounce, ViewStateResult, setIcon } from 'obsidian';
 import type GitSlideImportPlugin from '../main';
 import { GIT_IMPORT_VIEW_TYPE } from './constants';
 import { GitService } from '../git-slides/git-service';
@@ -94,7 +94,7 @@ const FILTER_PRESETS: FilterPreset[] = [
 ];
 
 /** Which column is currently focused for keyboard navigation */
-type FocusedColumn = 'commits' | 'files';
+type FocusedColumn = 'commits' | 'files' | 'preview' | 'render';
 
 export class GitImportView extends ItemView {
 	private plugin: GitSlideImportPlugin;
@@ -140,6 +140,7 @@ export class GitImportView extends ItemView {
 	// UI element references
 	private repoBtn: HTMLButtonElement | null = null;
 	private branchSelectEl: HTMLSelectElement | null = null;
+	private selectionPanelEl: HTMLElement | null = null;
 	private commitPanelEl: HTMLElement | null = null;
 	private filePanelEl: HTMLElement | null = null;
 	private commitListEl: HTMLElement | null = null;
@@ -149,13 +150,17 @@ export class GitImportView extends ItemView {
 	private previewEl: HTMLElement | null = null;
 	private markdownPreviewEl: HTMLElement | null = null;
 	private slidesPreviewEl: HTMLElement | null = null;
+	private renderPanelEl: HTMLElement | null = null;
 	private importBtn: HTMLButtonElement | null = null;
 	private includeInputEl: HTMLInputElement | null = null;
 	private excludeInputEl: HTMLInputElement | null = null;
+	private dateInputEl: HTMLInputElement | null = null;
 
 	// Preview tab state
 	private activePreviewTab: 'markdown' | 'slides' = 'slides';
 	private slideCountBadgeEl: HTMLElement | null = null;
+	private slidesTabEl: HTMLButtonElement | null = null;
+	private markdownTabEl: HTMLButtonElement | null = null;
 
 	// Currently selected file for diff preview
 	private selectedFile: GitFileChange | null = null;
@@ -234,28 +239,38 @@ export class GitImportView extends ItemView {
 
 	private setupKeyboardNavigation(): void {
 		this.containerEl.addEventListener('keydown', (e: KeyboardEvent) => {
-			// Don't intercept if focus is on an input element
+			// Don't intercept if focus is on an input element (except Tab navigation)
 			const target = e.target as HTMLElement;
-			if (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') {
+			const isFormElement = target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA';
+
+			if (e.key === 'Tab') {
+				e.preventDefault();
+				if (e.shiftKey) {
+					this.navigateColumn('prev');
+				} else {
+					this.navigateColumn('next');
+				}
+				return;
+			}
+
+			if (isFormElement) {
 				return;
 			}
 
 			switch (e.key) {
 				case 'ArrowUp':
-					e.preventDefault();
-					this.navigateVertical(-1);
+					// Only prevent default for list navigation, let preview scroll naturally
+					if (this.focusedColumn === 'commits' || this.focusedColumn === 'files') {
+						e.preventDefault();
+						this.navigateVertical(-1);
+					}
 					break;
 				case 'ArrowDown':
-					e.preventDefault();
-					this.navigateVertical(1);
-					break;
-				case 'ArrowLeft':
-					e.preventDefault();
-					this.navigateHorizontal('left');
-					break;
-				case 'ArrowRight':
-					e.preventDefault();
-					this.navigateHorizontal('right');
+					// Only prevent default for list navigation, let preview scroll naturally
+					if (this.focusedColumn === 'commits' || this.focusedColumn === 'files') {
+						e.preventDefault();
+						this.navigateVertical(1);
+					}
 					break;
 				case ' ':
 					e.preventDefault();
@@ -288,29 +303,46 @@ export class GitImportView extends ItemView {
 		}
 	}
 
-	private navigateHorizontal(direction: 'left' | 'right'): void {
-		if (direction === 'left' && this.focusedColumn === 'files') {
-			this.focusedColumn = 'commits';
-			this.updateFocusHighlight();
-			this.expandCommitsColumn();
-		} else if (direction === 'right' && this.focusedColumn === 'commits' && this.currentFiles.length > 0) {
-			this.focusedColumn = 'files';
-			this.focusedFileIndex = 0;
-			this.updateFocusHighlight();
-			this.collapseCommitsColumn();
-			// Show diff for first file
-			this.selectFileAtIndex(0);
+	private navigateColumn(direction: 'next' | 'prev'): void {
+		const columns: FocusedColumn[] = ['commits', 'files', 'preview', 'render'];
+		const currentIndex = columns.indexOf(this.focusedColumn);
+		let newIndex: number;
+
+		if (direction === 'next') {
+			newIndex = (currentIndex + 1) % columns.length;
+		} else {
+			newIndex = (currentIndex - 1 + columns.length) % columns.length;
 		}
+
+		this.focusedColumn = columns[newIndex]!;
+		this.onColumnFocus();
+		this.updateFocusHighlight();
 	}
 
-	private collapseCommitsColumn(): void {
-		this.commitPanelEl?.addClass('collapsed');
-		this.filePanelEl?.addClass('expanded');
-	}
-
-	private expandCommitsColumn(): void {
-		this.commitPanelEl?.removeClass('collapsed');
-		this.filePanelEl?.removeClass('expanded');
+	private onColumnFocus(): void {
+		// Focus appropriate element and auto-select first item when needed
+		if (this.focusedColumn === 'commits') {
+			this.commitListEl?.focus();
+			if (this.commits.length > 0) {
+				this.focusedCommitIndex = 0;
+				const commit = this.commits[0];
+				if (commit) {
+					void this.selectCommit(commit);
+				}
+			}
+		} else if (this.focusedColumn === 'files') {
+			this.fileListEl?.focus();
+			if (this.currentFiles.length > 0) {
+				this.focusedFileIndex = 0;
+				this.selectFileAtIndex(0);
+			}
+		} else if (this.focusedColumn === 'preview') {
+			// Focus the preview area for scrolling with arrow keys
+			this.previewEl?.focus();
+		} else if (this.focusedColumn === 'render') {
+			// Focus the copy button
+			this.importBtn?.focus();
+		}
 	}
 
 	private selectFileAtIndex(index: number): void {
@@ -344,7 +376,7 @@ export class GitImportView extends ItemView {
 				this.updateImportButton();
 				this.debouncedUpdatePreview();
 			}
-		} else {
+		} else if (this.focusedColumn === 'files') {
 			const file = this.currentFiles[this.focusedFileIndex];
 			if (file && this.selectedCommit) {
 				const commitHash = this.selectedCommit.hash;
@@ -366,11 +398,34 @@ export class GitImportView extends ItemView {
 				this.updateImportButton();
 				this.debouncedUpdatePreview();
 			}
+		} else if (this.focusedColumn === 'preview') {
+			// Toggle between slides and markdown tabs
+			if (this.activePreviewTab === 'slides') {
+				this.switchToMarkdownTab();
+			} else {
+				this.switchToSlidesTab();
+			}
 		}
 	}
 
+	private switchToSlidesTab(): void {
+		this.activePreviewTab = 'slides';
+		this.slidesTabEl?.addClass('active');
+		this.markdownTabEl?.removeClass('active');
+		this.markdownPreviewEl?.addClass('is-hidden');
+		this.slidesPreviewEl?.removeClass('is-hidden');
+	}
+
+	private switchToMarkdownTab(): void {
+		this.activePreviewTab = 'markdown';
+		this.markdownTabEl?.addClass('active');
+		this.slidesTabEl?.removeClass('active');
+		this.slidesPreviewEl?.addClass('is-hidden');
+		this.markdownPreviewEl?.removeClass('is-hidden');
+	}
+
 	private updateFocusHighlight(): void {
-		// Remove all focus highlights
+		// Remove all focus highlights from list items
 		this.commitListEl?.querySelectorAll('.git-import-commit').forEach(el => {
 			el.removeClass('keyboard-focus');
 		});
@@ -378,17 +433,29 @@ export class GitImportView extends ItemView {
 			el.removeClass('keyboard-focus');
 		});
 
-		// Add focus highlight to current item
+		// Remove column focus indicators
+		this.commitPanelEl?.removeClass('column-focused');
+		this.filePanelEl?.removeClass('column-focused');
+		this.previewEl?.parentElement?.removeClass('column-focused');
+		this.renderPanelEl?.removeClass('column-focused');
+
+		// Add focus highlight based on current column
 		if (this.focusedColumn === 'commits') {
+			this.commitPanelEl?.addClass('column-focused');
 			const commitEls = this.commitListEl?.querySelectorAll('.git-import-commit');
 			const focusedEl = commitEls?.[this.focusedCommitIndex];
 			focusedEl?.addClass('keyboard-focus');
 			focusedEl?.scrollIntoView({ block: 'nearest' });
-		} else {
+		} else if (this.focusedColumn === 'files') {
+			this.filePanelEl?.addClass('column-focused');
 			const fileEls = this.fileListEl?.querySelectorAll('.git-import-file');
 			const focusedEl = fileEls?.[this.focusedFileIndex];
 			focusedEl?.addClass('keyboard-focus');
 			focusedEl?.scrollIntoView({ block: 'nearest' });
+		} else if (this.focusedColumn === 'preview') {
+			this.previewEl?.parentElement?.addClass('column-focused');
+		} else if (this.focusedColumn === 'render') {
+			this.renderPanelEl?.addClass('column-focused');
 		}
 	}
 
@@ -427,9 +494,10 @@ export class GitImportView extends ItemView {
 		});
 		this.repoBtn.addEventListener('click', () => { void this.selectRepository(); });
 
-		// Branch selector
+		// Branch selector with icon
 		const branchGroup = section.createDiv({ cls: 'git-import-filter-group' });
-		branchGroup.createEl('label', { text: 'Branch:' });
+		const branchIcon = branchGroup.createSpan({ cls: 'git-import-branch-icon' });
+		setIcon(branchIcon, 'git-branch');
 		this.branchSelectEl = branchGroup.createEl('select');
 		this.branchSelectEl.disabled = true;
 		this.branchSelectEl.addEventListener('change', () => {
@@ -437,23 +505,21 @@ export class GitImportView extends ItemView {
 			void this.loadCommits();
 		});
 
-		// Start date picker
+		// Date range picker
 		const dateGroup = section.createDiv({ cls: 'git-import-filter-group' });
-		dateGroup.createEl('label', { text: 'From:' });
-		const dateInput = dateGroup.createEl('input', {
+		this.dateInputEl = dateGroup.createEl('input', {
 			type: 'date',
 			value: this.formatDateForInput(this.filter.sinceDate),
 			cls: 'git-import-date-input'
 		});
-		dateInput.addEventListener('change', () => {
-			this.filter.sinceDate = dateInput.value ? new Date(dateInput.value) : null;
+		this.dateInputEl.addEventListener('change', () => {
+			this.filter.sinceDate = this.dateInputEl?.value ? new Date(this.dateInputEl.value) : null;
 			void this.loadCommits();
 		});
 
-		// Period dropdown
-		const periodGroup = section.createDiv({ cls: 'git-import-filter-group' });
-		periodGroup.createEl('label', { text: 'Until:' });
-		const periodSelect = periodGroup.createEl('select');
+		// Period dropdown (in same group as date)
+		dateGroup.createEl('span', { text: '–', cls: 'git-import-date-separator' });
+		const periodSelect = dateGroup.createEl('select');
 		const periods: { value: TimePeriod; label: string }[] = [
 			{ value: 'present', label: 'Present' },
 			{ value: 'day', label: '+1 day' },
@@ -533,15 +599,18 @@ export class GitImportView extends ItemView {
 	private buildPanels(container: HTMLElement): void {
 		const panels = container.createDiv({ cls: 'git-import-panels' });
 
-		// Column 1: Commits
-		this.commitPanelEl = panels.createDiv({ cls: 'git-import-panel git-import-panel-commits' });
+		// Column 1: Selection (Commits above Files)
+		this.selectionPanelEl = panels.createDiv({ cls: 'git-import-panel git-import-panel-selection' });
+
+		// Commits section (top half)
+		this.commitPanelEl = this.selectionPanelEl.createDiv({ cls: 'git-import-section git-import-section-commits' });
 		this.commitPanelEl.createDiv({ cls: 'git-import-panel-header', text: 'Commits' });
 		this.commitListEl = this.commitPanelEl.createDiv({ cls: 'git-import-panel-content' });
 		this.commitListEl.setAttribute('tabindex', '0');
 		this.commitListEl.setText('Select a repository to see commits');
 
-		// Column 2: Files
-		this.filePanelEl = panels.createDiv({ cls: 'git-import-panel git-import-panel-files' });
+		// Files section (bottom half)
+		this.filePanelEl = this.selectionPanelEl.createDiv({ cls: 'git-import-section git-import-section-files' });
 		this.filePanelEl.createDiv({ cls: 'git-import-panel-header', text: 'Files' });
 		// Commit message header (shows selected commit's message)
 		this.fileCommitMessageEl = this.filePanelEl.createDiv({ cls: 'git-import-commit-header is-hidden' });
@@ -554,49 +623,34 @@ export class GitImportView extends ItemView {
 		this.fileDiffPreviewEl.createDiv({ cls: 'git-import-file-diff-header', text: 'Diff' });
 		this.fileDiffPreviewEl.createDiv({ cls: 'git-import-file-diff-content' });
 
-		// Column 3: Preview with tabs
+		// Column 2: Preview with tabs
 		const previewPanel = panels.createDiv({ cls: 'git-import-panel git-import-panel-preview' });
 
 		// Tabbed header
 		const previewHeader = previewPanel.createDiv({ cls: 'git-import-panel-header git-import-preview-header' });
 		const tabsEl = previewHeader.createDiv({ cls: 'git-import-preview-tabs' });
 
-		const slidesTab = tabsEl.createEl('button', {
+		this.slidesTabEl = tabsEl.createEl('button', {
 			cls: 'git-import-preview-tab active'
 		});
-		slidesTab.createSpan({ text: 'Slides' });
-		this.slideCountBadgeEl = slidesTab.createSpan({ cls: 'git-import-tab-badge', text: '0' });
+		this.slidesTabEl.createSpan({ text: 'Slides' });
+		this.slideCountBadgeEl = this.slidesTabEl.createSpan({ cls: 'git-import-tab-badge', text: '0' });
 
-		const markdownTab = tabsEl.createEl('button', {
+		this.markdownTabEl = tabsEl.createEl('button', {
 			text: 'Markdown',
 			cls: 'git-import-preview-tab'
 		});
 
-		// Copy button on the right side of the header
-		this.importBtn = previewHeader.createEl('button', {
-			text: 'Copy',
-			cls: 'git-import-copy-btn'
-		});
-		this.importBtn.disabled = true;
-		this.importBtn.addEventListener('click', () => void this.copyToClipboard());
-
-		slidesTab.addEventListener('click', () => {
-			this.activePreviewTab = 'slides';
-			slidesTab.addClass('active');
-			markdownTab.removeClass('active');
-			this.markdownPreviewEl?.addClass('is-hidden');
-			this.slidesPreviewEl?.removeClass('is-hidden');
+		this.slidesTabEl.addEventListener('click', () => {
+			this.switchToSlidesTab();
 		});
 
-		markdownTab.addEventListener('click', () => {
-			this.activePreviewTab = 'markdown';
-			markdownTab.addClass('active');
-			slidesTab.removeClass('active');
-			this.slidesPreviewEl?.addClass('is-hidden');
-			this.markdownPreviewEl?.removeClass('is-hidden');
+		this.markdownTabEl.addEventListener('click', () => {
+			this.switchToMarkdownTab();
 		});
 
 		this.previewEl = previewPanel.createDiv({ cls: 'git-import-panel-content git-import-preview-content' });
+		this.previewEl.setAttribute('tabindex', '0');
 
 		// Slides preview (visual)
 		this.slidesPreviewEl = this.previewEl.createDiv({ cls: 'git-import-slides-preview' });
@@ -606,11 +660,21 @@ export class GitImportView extends ItemView {
 		this.markdownPreviewEl = this.previewEl.createDiv({ cls: 'git-import-markdown-preview is-hidden' });
 		this.markdownPreviewEl.setText('Select commits and files to see preview');
 
-		// Column 4: Settings
-		const settingsPanel = panels.createDiv({ cls: 'git-import-panel git-import-panel-settings' });
-		settingsPanel.createDiv({ cls: 'git-import-panel-header', text: 'Slide options' });
-		const settingsContent = settingsPanel.createDiv({ cls: 'git-import-panel-content git-import-settings-content' });
-		this.buildSettingsPanel(settingsContent);
+		// Column 3: Render (settings + copy button)
+		this.renderPanelEl = panels.createDiv({ cls: 'git-import-panel git-import-panel-render' });
+
+		// Render header with Copy button
+		const renderHeader = this.renderPanelEl.createDiv({ cls: 'git-import-panel-header git-import-render-header' });
+		renderHeader.createSpan({ text: 'Render' });
+		this.importBtn = renderHeader.createEl('button', {
+			text: 'Copy',
+			cls: 'git-import-copy-btn'
+		});
+		this.importBtn.disabled = true;
+		this.importBtn.addEventListener('click', () => void this.copyToClipboard());
+
+		const renderContent = this.renderPanelEl.createDiv({ cls: 'git-import-panel-content git-import-settings-content' });
+		this.buildSettingsPanel(renderContent);
 	}
 
 	private buildSettingsPanel(container: HTMLElement): void {
@@ -838,8 +902,28 @@ export class GitImportView extends ItemView {
 		}
 		this.updateImportButton();
 
+		// Set date to 3 months before the latest commit
+		await this.setDateFromLatestCommit();
+
 		await this.loadBranches();
 		await this.loadCommits();
+	}
+
+	private async setDateFromLatestCommit(): Promise<void> {
+		if (!this.gitService) return;
+
+		const latestDate = await this.gitService.getLatestCommitDate();
+		if (latestDate) {
+			// Set to 3 months before the latest commit
+			const sinceDate = new Date(latestDate);
+			sinceDate.setMonth(sinceDate.getMonth() - 3);
+			this.filter.sinceDate = sinceDate;
+
+			// Update the date input field
+			if (this.dateInputEl) {
+				this.dateInputEl.value = this.formatDateForInput(sinceDate);
+			}
+		}
 	}
 
 	private async loadBranches(): Promise<void> {
@@ -903,6 +987,7 @@ export class GitImportView extends ItemView {
 				if (i === 0) commitEl.addClass('keyboard-focus');
 
 				const checkbox = commitEl.createEl('input', { type: 'checkbox' });
+				checkbox.tabIndex = -1; // Prevent checkbox from stealing focus
 				checkbox.checked = this.selectedCommitHashes.has(commit.hash);
 				checkbox.addEventListener('change', () => {
 					if (checkbox.checked) {
@@ -916,15 +1001,13 @@ export class GitImportView extends ItemView {
 				});
 
 				const infoEl = commitEl.createDiv({ cls: 'git-import-commit-info' });
+				commitEl.dataset.hash = commit.hash;
 				infoEl.addEventListener('click', () => {
 					this.focusedCommitIndex = i;
 					this.focusedColumn = 'commits';
 					this.updateFocusHighlight();
 					void this.selectCommit(commit);
 				});
-
-				const hashEl = infoEl.createSpan({ cls: 'git-import-commit-hash' });
-				hashEl.setText(commit.hashShort);
 
 				const msgEl = infoEl.createSpan({ cls: 'git-import-commit-message' });
 				msgEl.setText(commit.message);
@@ -948,8 +1031,7 @@ export class GitImportView extends ItemView {
 		commitEls?.forEach(el => el.removeClass('selected'));
 
 		const selectedEl = Array.from(commitEls ?? []).find(el => {
-			const hashEl = el.querySelector('.git-import-commit-hash');
-			return hashEl?.textContent === commit.hashShort;
+			return (el as HTMLElement).dataset.hash === commit.hash;
 		});
 		selectedEl?.addClass('selected');
 
@@ -1022,6 +1104,7 @@ export class GitImportView extends ItemView {
 				const fileEl = this.fileListEl.createDiv({ cls: 'git-import-file' });
 
 				const checkbox = fileEl.createEl('input', { type: 'checkbox' });
+				checkbox.tabIndex = -1; // Prevent checkbox from stealing focus
 				checkbox.checked = selectedForCommit.has(file.path);
 				checkbox.addEventListener('change', () => {
 					if (checkbox.checked) {
@@ -1144,14 +1227,10 @@ export class GitImportView extends ItemView {
 	private updateCommitCheckbox(hash: string, checked: boolean): void {
 		const commitEls = this.commitListEl?.querySelectorAll('.git-import-commit');
 		for (const el of Array.from(commitEls ?? [])) {
-			const hashEl = el.querySelector('.git-import-commit-hash');
-			if (hashEl?.textContent) {
-				const commit = this.commits.find(c => c.hashShort === hashEl.textContent);
-				if (commit?.hash === hash) {
-					const checkbox = el.querySelector('input[type="checkbox"]') as HTMLInputElement;
-					if (checkbox) checkbox.checked = checked;
-					break;
-				}
+			if ((el as HTMLElement).dataset.hash === hash) {
+				const checkbox = el.querySelector('input[type="checkbox"]') as HTMLInputElement;
+				if (checkbox) checkbox.checked = checked;
+				break;
 			}
 		}
 	}

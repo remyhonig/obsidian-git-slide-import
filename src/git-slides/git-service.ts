@@ -51,6 +51,22 @@ export class GitService {
 	}
 
 	/**
+	 * Get the date of the most recent commit in the repository
+	 */
+	async getLatestCommitDate(): Promise<Date | null> {
+		try {
+			const log = await this.git.raw(['log', '-1', '--format=%aI']);
+			const dateStr = log.trim();
+			if (dateStr) {
+				return new Date(dateStr);
+			}
+			return null;
+		} catch {
+			return null;
+		}
+	}
+
+	/**
 	 * Get commit log with optional filters
 	 * Returns commits in chronological order (oldest first)
 	 */

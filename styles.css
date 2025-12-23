@@ -73,7 +73,21 @@
 
 /* Date input styling */
 .git-import-date-input {
-	width: 130px;
+	width: 145px;
+}
+
+/* Branch icon */
+.git-import-branch-icon {
+	display: flex;
+	align-items: center;
+	color: var(--text-muted);
+}
+
+/* Date separator */
+.git-import-date-separator {
+	font-size: 0.85em;
+	color: var(--text-muted);
+	padding: 0 4px;
 }
 
 /* Repo button */
@@ -90,7 +104,7 @@
 	color: var(--text-on-accent);
 }
 
-/* Three-panel content area */
+/* Three-column layout */
 .git-import-panels {
 	display: flex;
 	flex: 1;
@@ -110,42 +124,56 @@
 	border-right: none;
 }
 
-/* Panel sizing */
-.git-import-panel-commits {
-	flex: 0 0 280px;
-	min-width: 200px;
-	transition: flex-basis 0.2s ease-out, min-width 0.2s ease-out;
+/* Column 1: Selection panel (commits above files) */
+.git-import-panel-selection {
+	flex: 0 0 320px;
+	min-width: 280px;
+	display: flex;
+	flex-direction: column;
 }
 
-.git-import-panel-commits.collapsed {
-	flex: 0 0 100px;
-	min-width: 100px;
+.git-import-section {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
 }
 
-.git-import-panel-commits.collapsed .git-import-commit-message,
-.git-import-panel-commits.collapsed .git-import-commit-date {
-	display: none;
+.git-import-section-commits {
+	flex: 1;
+	min-height: 150px;
+	border-bottom: 1px solid var(--background-modifier-border);
 }
 
-.git-import-panel-files {
-	flex: 0 0 300px;
-	min-width: 200px;
-	transition: flex-basis 0.2s ease-out;
+.git-import-section-files {
+	flex: 1;
+	min-height: 150px;
 }
 
-.git-import-panel-files.expanded {
-	flex: 0 0 480px;
-}
-
+/* Column 2: Preview */
 .git-import-panel-preview {
 	flex: 1;
 	min-width: 300px;
 }
 
-.git-import-panel-settings {
+/* Column 3: Render (settings) */
+.git-import-panel-render {
 	flex: 0 0 320px;
 	min-width: 280px;
 	background: var(--background-secondary-alt);
+}
+
+/* Column focus indicator */
+.git-import-panel.column-focused,
+.git-import-section.column-focused {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+/* Render header with button */
+.git-import-render-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
 }
 
 .git-import-panel-header {
@@ -198,13 +226,6 @@
 	flex: 1;
 	min-width: 0;
 	cursor: pointer;
-}
-
-.git-import-commit-hash {
-	font-family: var(--font-monospace);
-	font-size: 0.8em;
-	color: var(--text-accent);
-	flex-shrink: 0;
 }
 
 .git-import-commit-message {
@@ -436,24 +457,24 @@
 	margin-bottom: -1px;
 }
 
-/* Copy button in preview header */
-.git-import-copy-btn {
+/* Copy button in render header */
+.git-import-view .git-import-copy-btn {
 	padding: 4px 12px;
 	font-size: 0.8em;
 	font-weight: 500;
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
+	background-color: var(--interactive-accent) !important;
+	color: var(--text-on-accent) !important;
 	border: none;
 	border-radius: 4px;
 	cursor: pointer;
 	align-self: center;
 }
 
-.git-import-copy-btn:hover {
-	background: var(--interactive-accent-hover);
+.git-import-view .git-import-copy-btn:hover:not(:disabled) {
+	background-color: var(--interactive-accent-hover) !important;
 }
 
-.git-import-copy-btn:disabled {
+.git-import-view .git-import-copy-btn:disabled {
 	opacity: 0.5;
 	cursor: not-allowed;
 }
