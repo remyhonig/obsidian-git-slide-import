@@ -66,25 +66,24 @@ export class PluginSettingTab extends ObsidianPluginSettingTab {
 					await this.plugin.saveSettings();
 				}));
 
+		const getDisplayModeValue = (): string => {
+			if (this.plugin.settings.formatDefaults.showFullFile) {
+				return this.plugin.settings.formatDefaults.highlightMode === 'stepped' ? 'full-stepped' : 'full-all';
+			}
+			return this.plugin.settings.formatDefaults.highlightMode === 'stepped' ? 'diff-stepped' : 'diff-all';
+		};
 		new Setting(containerEl)
-			.setName('Highlight mode')
-			.setDesc('How to display highlighted lines (all at once or stepped)')
+			.setName('Code display')
+			.setDesc('What code to show and how to reveal highlights')
 			.addDropdown(dropdown => dropdown
-				.addOption('all', 'All at once')
-				.addOption('stepped', 'Stepped (reveal one by one)')
-				.setValue(this.plugin.settings.formatDefaults.highlightMode)
+				.addOption('diff-all', 'Changed lines only')
+				.addOption('diff-stepped', 'Changed lines, stepped reveal')
+				.addOption('full-all', 'Complete file')
+				.addOption('full-stepped', 'Complete file, stepped reveal')
+				.setValue(getDisplayModeValue())
 				.onChange(async (value) => {
-					this.plugin.settings.formatDefaults.highlightMode = value as 'all' | 'stepped';
-					await this.plugin.saveSettings();
-				}));
-
-		new Setting(containerEl)
-			.setName('Show full file')
-			.setDesc('Show entire file content instead of just the diff')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.formatDefaults.showFullFile)
-				.onChange(async (value) => {
-					this.plugin.settings.formatDefaults.showFullFile = value;
+					this.plugin.settings.formatDefaults.showFullFile = value.startsWith('full-');
+					this.plugin.settings.formatDefaults.highlightMode = value.endsWith('-stepped') ? 'stepped' : 'all';
 					await this.plugin.saveSettings();
 				}));
 
@@ -124,7 +123,7 @@ export class PluginSettingTab extends ObsidianPluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Slide organization')
-			.setDesc('How to organize slides for multiple files')
+			.setDesc('Flat: one slide per file. Grouped: commit intro + vertical subslides per file. Progressive: same file evolving across commits. Per-hunk: each diff hunk gets its own slide.')
 			.addDropdown(dropdown => dropdown
 				.addOption('flat', 'Flat')
 				.addOption('grouped', 'Grouped by commit')

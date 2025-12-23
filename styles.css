@@ -421,34 +421,63 @@
 /* Preview header with tabs */
 .git-import-preview-header {
 	display: flex;
-	align-items: center;
+	align-items: stretch;
 	padding: 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
 }
 
 .git-import-preview-tabs {
 	display: flex;
 	gap: 0;
+	margin-bottom: -1px;
 }
 
 .git-import-preview-tab {
-	padding: 8px 16px;
-	font-size: 0.85em;
+	padding: 6px 12px;
+	font-size: 0.8em;
 	font-weight: 500;
 	background: transparent;
-	border: none;
-	border-bottom: 2px solid transparent;
+	border: 1px solid transparent;
+	border-bottom: none;
+	border-radius: 4px 4px 0 0;
 	color: var(--text-muted);
 	cursor: pointer;
-	transition: color 0.15s, border-color 0.15s;
+	transition: color 0.15s, background 0.15s;
+	display: flex;
+	align-items: center;
+	gap: 6px;
 }
 
 .git-import-preview-tab:hover {
 	color: var(--text-normal);
+	background: var(--background-modifier-hover);
 }
 
 .git-import-preview-tab.active {
-	color: var(--text-accent);
-	border-bottom-color: var(--interactive-accent);
+	color: var(--text-normal);
+	background: var(--background-primary);
+	border-color: var(--background-modifier-border);
+}
+
+/* Slide count badge */
+.git-import-tab-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 5px;
+	font-size: 0.75em;
+	font-weight: 600;
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+	border-radius: 9px;
+}
+
+.git-import-preview-tab.active .git-import-tab-badge {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
 }
 
 /* Markdown preview (raw code) */
@@ -630,13 +659,51 @@
 }
 
 .slide-code-block .code-line {
-	display: block;
+	display: flex;
+	align-items: flex-start;
+	min-height: 1.4em;
+}
+
+.slide-code-block .code-line.highlighted {
+	background: rgba(255, 213, 79, 0.15);
+	margin: 0 -8px;
+	padding: 0 8px;
+}
+
+.slide-code-block .code-line-content {
+	flex: 1;
+}
+
+/* Step badges */
+.slide-code-block .line-step-badges {
+	display: flex;
+	gap: 2px;
+	margin-right: 8px;
+	flex-shrink: 0;
+}
+
+.slide-code-block .line-step-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	background: #ffd54f;
+	color: #000;
+	font-size: 10px;
+	font-weight: 700;
+	border-radius: 50%;
+	font-family: var(--font-interface);
 }
 
 /* Syntax highlighting colors */
 .slide-code-block .hl-keyword {
 	color: #c678dd;
 	font-weight: 500;
+}
+
+.slide-code-block .hl-yaml-key {
+	color: #e06c75;
 }
 
 .slide-code-block .hl-string {
@@ -667,6 +734,10 @@
 /* Light theme overrides */
 .theme-light .slide-code-block .hl-keyword {
 	color: #a626a4;
+}
+
+.theme-light .slide-code-block .hl-yaml-key {
+	color: #e45649;
 }
 
 .theme-light .slide-code-block .hl-string {

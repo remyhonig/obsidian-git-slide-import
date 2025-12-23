@@ -40,64 +40,54 @@ interface FilterPreset {
 
 const FILTER_PRESETS: FilterPreset[] = [
 	{
-		name: 'All source files',
-		include: '\\.(ts|js|tsx|jsx|py|java|go|rs|c|cpp|h|hpp|cs|rb|php|swift|kt|yaml|yml)$',
-		exclude: '(node_modules|vendor|dist|build|\\.min\\.|\\.(lock|json|md|txt))$'
-	},
-	{
 		name: 'JavaScript/TypeScript',
-		include: '\\.(ts|js|tsx|jsx|mjs|cjs)$',
-		exclude: '(node_modules|dist|build|\\.min\\.|package-lock\\.json)$'
-	},
-	{
-		name: 'Node.js',
-		include: '\\.(ts|js|mjs|cjs|json|yaml|yml)$',
-		exclude: '(node_modules|dist|build|\\.min\\.|package-lock\\.json|\\.env)$'
+		include: '\\.(ts|js|tsx|jsx|mjs|cjs|json|yaml|yml)$',
+		exclude: '(node_modules|dist|build|\\.min\\.|package-lock\\.json|yarn\\.lock|pnpm-lock\\.yaml)$'
 	},
 	{
 		name: 'React',
-		include: '\\.(tsx|jsx|ts|js|css|scss)$',
-		exclude: '(node_modules|dist|build|\\.min\\.|package-lock\\.json)$'
+		include: '\\.(tsx|jsx|ts|js|css|scss|json|yaml|yml)$',
+		exclude: '(node_modules|dist|build|\\.min\\.|package-lock\\.json|yarn\\.lock)$'
 	},
 	{
 		name: 'Vue.js',
-		include: '\\.(vue|ts|js|css|scss)$',
-		exclude: '(node_modules|dist|build|\\.min\\.|package-lock\\.json)$'
+		include: '\\.(vue|ts|js|css|scss|json|yaml|yml)$',
+		exclude: '(node_modules|dist|build|\\.min\\.|package-lock\\.json|yarn\\.lock)$'
 	},
 	{
 		name: 'PHP/Laravel',
-		include: '\\.(php|blade\\.php|yaml|yml)$',
-		exclude: '(vendor|storage|bootstrap/cache|composer\\.lock|\\.env)$'
+		include: '\\.(php|blade\\.php|json|yaml|yml)$',
+		exclude: '(vendor|storage|bootstrap/cache|composer\\.lock)$'
 	},
 	{
 		name: 'PHP/Symfony',
-		include: '\\.(php|twig|yaml|yml)$',
-		exclude: '(vendor|var|composer\\.lock|\\.env)$'
+		include: '\\.(php|twig|json|yaml|yml)$',
+		exclude: '(vendor|var|composer\\.lock)$'
 	},
 	{
 		name: 'Java/Spring',
-		include: '\\.(java|xml|properties|yaml|yml)$',
+		include: '\\.(java|xml|properties|json|yaml|yml)$',
 		exclude: '(target|build|\\.idea|\\.gradle)$'
 	},
 	{
-		name: 'Python/Django',
-		include: '\\.(py|html|yaml|yml)$',
-		exclude: '(__pycache__|venv|\\.venv|migrations|\\.(pyc|pyo))$'
-	},
-	{
-		name: 'Python/FastAPI',
-		include: '\\.(py|yaml|yml)$',
-		exclude: '(__pycache__|venv|\\.venv|\\.(pyc|pyo))$'
+		name: 'Python',
+		include: '\\.(py|json|yaml|yml|toml)$',
+		exclude: '(__pycache__|venv|\\.venv|\\.(pyc|pyo)|poetry\\.lock)$'
 	},
 	{
 		name: 'Go',
-		include: '\\.(go|mod|sum|yaml|yml)$',
+		include: '\\.(go|mod|sum|json|yaml|yml)$',
 		exclude: '(vendor)$'
 	},
 	{
 		name: 'Rust',
-		include: '\\.(rs|toml|yaml|yml)$',
+		include: '\\.(rs|toml|json|yaml|yml)$',
 		exclude: '(target|Cargo\\.lock)$'
+	},
+	{
+		name: 'Ruby',
+		include: '\\.(rb|erb|json|yaml|yml)$',
+		exclude: '(vendor|Gemfile\\.lock)$'
 	}
 ];
 
@@ -132,8 +122,8 @@ export class GitImportModal extends Modal {
 	}
 
 	// File filter patterns
-	private includePattern = '\\.(ts|js|tsx|jsx|py|java|go|rs|c|cpp|h|hpp|cs|rb|php|swift|kt)$';
-	private excludePattern = '(node_modules|dist|build|\\.min\\.|\\.(lock|json|md|txt|yaml|yml))$';
+	private includePattern = '';
+	private excludePattern = '(node_modules|vendor|dist|build|\\.min\\.|package-lock\\.json|composer\\.lock|yarn\\.lock|pnpm-lock\\.yaml|Cargo\\.lock|Gemfile\\.lock|poetry\\.lock)$';
 
 	// Keyboard navigation state
 	private focusedColumn: FocusedColumn = 'commits';
@@ -162,6 +152,7 @@ export class GitImportModal extends Modal {
 
 	// Preview tab state
 	private activePreviewTab: 'markdown' | 'slides' = 'slides';
+	private slideCountBadgeEl: HTMLElement | null = null;
 
 	// Currently selected file for diff preview
 	private selectedFile: GitFileChange | null = null;
@@ -540,9 +531,11 @@ export class GitImportModal extends Modal {
 		const tabsEl = previewHeader.createDiv({ cls: 'git-import-preview-tabs' });
 
 		const slidesTab = tabsEl.createEl('button', {
-			text: 'Slides',
 			cls: 'git-import-preview-tab active'
 		});
+		slidesTab.createSpan({ text: 'Slides' });
+		this.slideCountBadgeEl = slidesTab.createSpan({ cls: 'git-import-tab-badge', text: '0' });
+
 		const markdownTab = tabsEl.createEl('button', {
 			text: 'Markdown',
 			cls: 'git-import-preview-tab'
@@ -586,7 +579,7 @@ export class GitImportModal extends Modal {
 		const orgSetting = container.createDiv({ cls: 'git-import-setting' });
 		new Setting(orgSetting)
 			.setName('Slide organization')
-			.setDesc('How to organize the generated slides.')
+			.setDesc('Flat: one slide per file. Grouped: commit intro + vertical subslides per file. Progressive: same file evolving across commits. Per-hunk: each diff hunk gets its own slide.')
 			.addDropdown(dropdown => dropdown
 				.addOption('flat', 'Flat')
 				.addOption('grouped', 'Grouped by commit')
@@ -610,29 +603,26 @@ export class GitImportModal extends Modal {
 					this.debouncedUpdatePreview();
 				}));
 
-		// Highlight mode
-		const modeSetting = container.createDiv({ cls: 'git-import-setting' });
-		new Setting(modeSetting)
-			.setName('Reveal style')
-			.setDesc('Show all highlights at once, or reveal them one by one.')
+		// Combined code display mode (full file + reveal style)
+		const displayModeSetting = container.createDiv({ cls: 'git-import-setting' });
+		const getDisplayModeValue = (): string => {
+			if (this.formatOptions.showFullFile) {
+				return this.formatOptions.highlightMode === 'stepped' ? 'full-stepped' : 'full-all';
+			}
+			return this.formatOptions.highlightMode === 'stepped' ? 'diff-stepped' : 'diff-all';
+		};
+		new Setting(displayModeSetting)
+			.setName('Code display')
+			.setDesc('What code to show and how to reveal highlights.')
 			.addDropdown(dropdown => dropdown
-				.addOption('all', 'All at once')
-				.addOption('stepped', 'One by one')
-				.setValue(this.formatOptions.highlightMode)
+				.addOption('diff-all', 'Changed lines only')
+				.addOption('diff-stepped', 'Changed lines, stepped reveal')
+				.addOption('full-all', 'Complete file')
+				.addOption('full-stepped', 'Complete file, stepped reveal')
+				.setValue(getDisplayModeValue())
 				.onChange(value => {
-					this.formatOptions.highlightMode = value as 'all' | 'stepped';
-					this.debouncedUpdatePreview();
-				}));
-
-		// Show full file
-		const fullFileSetting = container.createDiv({ cls: 'git-import-setting' });
-		new Setting(fullFileSetting)
-			.setName('Show complete file')
-			.setDesc('Display the entire file instead of just the changed lines.')
-			.addToggle(toggle => toggle
-				.setValue(this.formatOptions.showFullFile)
-				.onChange(value => {
-					this.formatOptions.showFullFile = value;
+					this.formatOptions.showFullFile = value.startsWith('full-');
+					this.formatOptions.highlightMode = value.endsWith('-stepped') ? 'stepped' : 'all';
 					this.previewCache.clear();
 					this.debouncedUpdatePreview();
 				}));
@@ -1178,6 +1168,7 @@ export class GitImportModal extends Modal {
 			this.slidesPreviewEl.setText('Select commits and files to see preview');
 			this.markdownPreviewEl.empty();
 			this.markdownPreviewEl.setText('Select commits and files to see preview');
+			this.updateSlideCountBadge(0);
 			return;
 		}
 
@@ -1303,6 +1294,15 @@ export class GitImportModal extends Modal {
 				this.renderSlideContent(slideEl, trimmedContent, slideNumber);
 			}
 		}
+
+		// Update slide count badge
+		this.updateSlideCountBadge(slideNumber);
+	}
+
+	private updateSlideCountBadge(count: number): void {
+		if (this.slideCountBadgeEl) {
+			this.slideCountBadgeEl.setText(String(count));
+		}
 	}
 
 	private renderSlideContent(slideEl: HTMLElement, content: string, slideNumber: number): void {
@@ -1411,21 +1411,104 @@ export class GitImportModal extends Modal {
 	}
 
 	/**
-	 * Render code with syntax highlighting
+	 * Parse highlight groups from annotation like "1-3|5-7" or "1,3,5|7-9"
+	 * Returns an array where each element is a Set of line numbers for that step
 	 */
-	private renderHighlightedCode(container: HTMLElement, code: string, language: string): void {
+	private parseHighlightGroups(annotation: string): Set<number>[] {
+		if (!annotation.trim()) return [];
+
+		const groups: Set<number>[] = [];
+		// Split by | for stepped highlights
+		const steps = annotation.split('|');
+
+		for (const step of steps) {
+			const lineNumbers = new Set<number>();
+			// Split by comma for multiple ranges in one step
+			const parts = step.split(',');
+
+			for (const part of parts) {
+				const trimmed = part.trim();
+				if (trimmed.includes('-')) {
+					// Range like "1-3"
+					const [startStr, endStr] = trimmed.split('-');
+					const start = parseInt(startStr ?? '', 10);
+					const end = parseInt(endStr ?? '', 10);
+					if (!isNaN(start) && !isNaN(end)) {
+						for (let i = start; i <= end; i++) {
+							lineNumbers.add(i);
+						}
+					}
+				} else {
+					// Single line number
+					const num = parseInt(trimmed, 10);
+					if (!isNaN(num)) {
+						lineNumbers.add(num);
+					}
+				}
+			}
+
+			if (lineNumbers.size > 0) {
+				groups.push(lineNumbers);
+			}
+		}
+
+		return groups;
+	}
+
+	/**
+	 * Render code with syntax highlighting and line highlight indicators
+	 */
+	private renderHighlightedCode(
+		container: HTMLElement,
+		code: string,
+		language: string,
+		highlightGroups: Set<number>[] = []
+	): void {
 		const lines = code.split('\n');
+
+		// Build a map of line number -> step numbers (1-indexed)
+		const lineToSteps = new Map<number, number[]>();
+		for (let stepIdx = 0; stepIdx < highlightGroups.length; stepIdx++) {
+			const group = highlightGroups[stepIdx];
+			if (!group) continue;
+			for (const lineNum of group) {
+				if (!lineToSteps.has(lineNum)) {
+					lineToSteps.set(lineNum, []);
+				}
+				lineToSteps.get(lineNum)!.push(stepIdx + 1);
+			}
+		}
 
 		for (let i = 0; i < lines.length; i++) {
 			const line = lines[i] ?? '';
-			const lineEl = container.createDiv({ cls: 'code-line' });
+			const lineNum = i + 1;
+			const steps = lineToSteps.get(lineNum);
+			const isHighlighted = steps && steps.length > 0;
+
+			const lineEl = container.createDiv({
+				cls: isHighlighted ? 'code-line highlighted' : 'code-line'
+			});
+
+			// Add step indicator badges if this line is highlighted
+			if (steps && steps.length > 0) {
+				const badgeContainer = lineEl.createDiv({ cls: 'line-step-badges' });
+				for (const step of steps) {
+					badgeContainer.createSpan({
+						cls: 'line-step-badge',
+						text: String(step)
+					});
+				}
+			}
+
+			// Line content wrapper
+			const lineContent = lineEl.createDiv({ cls: 'code-line-content' });
 
 			// Tokenize and highlight the line
-			this.highlightLine(lineEl, line, language);
+			this.highlightLine(lineContent, line, language);
 
 			// Add newline except for last line
 			if (i < lines.length - 1) {
-				lineEl.appendText('\n');
+				lineContent.appendText('\n');
 			}
 		}
 	}
@@ -1444,6 +1527,7 @@ export class GitImportModal extends Modal {
 			rust: ['fn', 'let', 'mut', 'const', 'static', 'struct', 'enum', 'impl', 'trait', 'pub', 'use', 'mod', 'crate', 'self', 'super', 'return', 'if', 'else', 'for', 'while', 'loop', 'match', 'break', 'continue', 'move', 'ref', 'as', 'in', 'where', 'async', 'await', 'dyn', 'unsafe', 'extern', 'type', 'true', 'false', 'Some', 'None', 'Ok', 'Err'],
 			php: ['function', 'class', 'interface', 'trait', 'extends', 'implements', 'public', 'private', 'protected', 'static', 'final', 'abstract', 'return', 'if', 'else', 'elseif', 'for', 'foreach', 'while', 'do', 'switch', 'case', 'break', 'continue', 'default', 'try', 'catch', 'finally', 'throw', 'new', 'use', 'namespace', 'echo', 'print', 'require', 'include', 'true', 'false', 'null', 'array', 'fn'],
 			ruby: ['def', 'class', 'module', 'end', 'return', 'if', 'elsif', 'else', 'unless', 'case', 'when', 'for', 'while', 'until', 'do', 'break', 'next', 'redo', 'retry', 'begin', 'rescue', 'ensure', 'raise', 'yield', 'self', 'super', 'nil', 'true', 'false', 'and', 'or', 'not', 'in', 'then', 'attr_reader', 'attr_writer', 'attr_accessor', 'require', 'include', 'extend', 'private', 'protected', 'public'],
+			yaml: ['true', 'false', 'null', 'yes', 'no', 'on', 'off'],
 			css: ['@import', '@media', '@keyframes', '@font-face', '@supports', '@page', '@namespace', '!important'],
 			html: ['DOCTYPE', 'html', 'head', 'body', 'div', 'span', 'p', 'a', 'img', 'ul', 'ol', 'li', 'table', 'tr', 'td', 'th', 'form', 'input', 'button', 'script', 'style', 'link', 'meta', 'title', 'header', 'footer', 'nav', 'main', 'section', 'article', 'aside']
 		};
@@ -1465,23 +1549,39 @@ export class GitImportModal extends Modal {
 		const normalizedLang = langAliases[language] ?? language;
 		const langKeywords = keywords[normalizedLang] ?? keywords['typescript'] ?? [];
 
-		// Simple tokenization patterns
-		const patterns: { pattern: RegExp; className: string }[] = [
-			// Comments (single line)
-			{ pattern: /\/\/.*$/, className: 'hl-comment' },
-			{ pattern: /#.*$/, className: 'hl-comment' },
-			// Multi-line comment markers (simplified)
-			{ pattern: /\/\*.*?\*\//, className: 'hl-comment' },
-			// Strings (double and single quotes, template literals)
-			{ pattern: /"(?:[^"\\]|\\.)*"/, className: 'hl-string' },
-			{ pattern: /'(?:[^'\\]|\\.)*'/, className: 'hl-string' },
-			{ pattern: /`(?:[^`\\]|\\.)*`/, className: 'hl-string' },
-			// Numbers
-			{ pattern: /\b\d+\.?\d*\b/, className: 'hl-number' },
-			// Operators and punctuation
-			{ pattern: /[{}()\[\];,.]/, className: 'hl-punctuation' },
-			{ pattern: /[+\-*/%=<>!&|^~?:]+/, className: 'hl-operator' },
-		];
+		// Languages that use # for comments
+		const hashCommentLangs = ['python', 'ruby', 'bash', 'shell', 'yaml', 'perl', 'r'];
+		const usesHashComments = hashCommentLangs.includes(normalizedLang);
+
+		// Build language-appropriate patterns
+		let patterns: { pattern: RegExp; className: string }[] = [];
+
+		if (normalizedLang === 'yaml') {
+			// YAML needs special handling - render directly and return
+			this.highlightYamlLine(container, line);
+			return;
+		} else {
+			patterns = [
+				// Comments (single line) - C-style
+				{ pattern: /\/\/.*$/, className: 'hl-comment' },
+				// Multi-line comment markers (simplified)
+				{ pattern: /\/\*.*?\*\//, className: 'hl-comment' },
+				// Strings (double and single quotes, template literals)
+				{ pattern: /"(?:[^"\\]|\\.)*"/, className: 'hl-string' },
+				{ pattern: /'(?:[^'\\]|\\.)*'/, className: 'hl-string' },
+				{ pattern: /`(?:[^`\\]|\\.)*`/, className: 'hl-string' },
+				// Numbers
+				{ pattern: /\b\d+\.?\d*\b/, className: 'hl-number' },
+				// Operators and punctuation
+				{ pattern: /[{}()\[\];,.]/, className: 'hl-punctuation' },
+				{ pattern: /[+\-*/%=<>!&|^~?:]+/, className: 'hl-operator' },
+			];
+
+			// Add hash comments only for languages that use them
+			if (usesHashComments) {
+				patterns.unshift({ pattern: /#.*$/, className: 'hl-comment' });
+			}
+		}
 
 		let remaining = line;
 		let pos = 0;
@@ -1523,6 +1623,105 @@ export class GitImportModal extends Modal {
 			container.appendText(remaining[0] ?? '');
 			remaining = remaining.slice(1);
 		}
+	}
+
+	/**
+	 * Special highlighter for YAML syntax
+	 */
+	private highlightYamlLine(container: HTMLElement, line: string): void {
+		// Check for comment
+		const commentMatch = line.match(/^(\s*)(#.*)$/);
+		if (commentMatch) {
+			if (commentMatch[1]) container.appendText(commentMatch[1]);
+			container.createSpan({ cls: 'hl-comment', text: commentMatch[2] ?? '' });
+			return;
+		}
+
+		// Check for key: value pattern
+		const keyValueMatch = line.match(/^(\s*)([a-zA-Z_][a-zA-Z0-9_-]*)(:)(.*)$/);
+		if (keyValueMatch) {
+			const [, indent, key, colon, rest] = keyValueMatch;
+			if (indent) container.appendText(indent);
+			container.createSpan({ cls: 'hl-yaml-key', text: key ?? '' });
+			container.createSpan({ cls: 'hl-punctuation', text: colon ?? '' });
+			if (rest) {
+				this.highlightYamlValue(container, rest);
+			}
+			return;
+		}
+
+		// Check for list item
+		const listMatch = line.match(/^(\s*)(-)(\s*)(.*)$/);
+		if (listMatch) {
+			const [, indent, dash, space, rest] = listMatch;
+			if (indent) container.appendText(indent);
+			container.createSpan({ cls: 'hl-punctuation', text: dash ?? '' });
+			if (space) container.appendText(space);
+			if (rest) {
+				// Check if it's a key-value in list
+				const kvMatch = rest.match(/^([a-zA-Z_][a-zA-Z0-9_-]*)(:)(.*)$/);
+				if (kvMatch) {
+					const [, k, c, v] = kvMatch;
+					container.createSpan({ cls: 'hl-yaml-key', text: k ?? '' });
+					container.createSpan({ cls: 'hl-punctuation', text: c ?? '' });
+					if (v) this.highlightYamlValue(container, v);
+				} else {
+					this.highlightYamlValue(container, rest);
+				}
+			}
+			return;
+		}
+
+		// Plain text
+		container.appendText(line);
+	}
+
+	/**
+	 * Highlight YAML value portion
+	 */
+	private highlightYamlValue(container: HTMLElement, value: string): void {
+		// Check for string
+		const stringMatch = value.match(/^(\s*)(["'])(.*)\2(\s*)$/);
+		if (stringMatch) {
+			const [, leadSpace, quote, content, trailSpace] = stringMatch;
+			if (leadSpace) container.appendText(leadSpace);
+			container.createSpan({ cls: 'hl-string', text: `${quote}${content}${quote}` });
+			if (trailSpace) container.appendText(trailSpace);
+			return;
+		}
+
+		// Check for number
+		const numberMatch = value.match(/^(\s*)(\d+\.?\d*)(\s*)$/);
+		if (numberMatch) {
+			const [, leadSpace, num, trailSpace] = numberMatch;
+			if (leadSpace) container.appendText(leadSpace);
+			container.createSpan({ cls: 'hl-number', text: num ?? '' });
+			if (trailSpace) container.appendText(trailSpace);
+			return;
+		}
+
+		// Check for boolean/null
+		const boolMatch = value.match(/^(\s*)(true|false|null|yes|no|on|off|~)(\s*)$/i);
+		if (boolMatch) {
+			const [, leadSpace, bool, trailSpace] = boolMatch;
+			if (leadSpace) container.appendText(leadSpace);
+			container.createSpan({ cls: 'hl-keyword', text: bool ?? '' });
+			if (trailSpace) container.appendText(trailSpace);
+			return;
+		}
+
+		// Check for anchor/alias
+		const anchorMatch = value.match(/^(\s*)([&*])([a-zA-Z_][a-zA-Z0-9_]*)(.*)$/);
+		if (anchorMatch) {
+			const [, leadSpace, symbol, name, rest] = anchorMatch;
+			if (leadSpace) container.appendText(leadSpace);
+			container.createSpan({ cls: 'hl-type', text: `${symbol}${name}` });
+			if (rest) container.appendText(rest);
+			return;
+		}
+
+		// Plain value (unquoted string)
+		container.createSpan({ cls: 'hl-string', text: value });
 	}
 
 	private async doImport(): Promise<void> {
