@@ -1,10 +1,10 @@
 {
-	"id": "obsidian-concept-map",
-	"name": "Concept Map",
+	"id": "obsidian-git-slide-import",
+	"name": "Git Slide Import",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Generate concept maps from simple arrow syntax statements like Subject -> verb -> Object",
+	"description": "Import git commits, diffs, and source code into Advanced Slides format for storytelling about code changes",
 	"author": "Remy Honig",
 	"authorUrl": "https://github.com/remyhonig",
-	"isDesktopOnly": false
+	"isDesktopOnly": true
 }
