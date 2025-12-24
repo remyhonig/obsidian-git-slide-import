@@ -570,8 +570,9 @@ export class SlideGenerator {
 
 	/**
 	 * Extract file-related template variables
+	 * Note: Only returns file-specific variables, not commit variables
 	 */
-	private getFileVariables(diff: GitFileDiff, allDiffs: GitFileDiff[]): TemplateVariables {
+	private getFileVariables(diff: GitFileDiff, allDiffs: GitFileDiff[]): Pick<TemplateVariables, 'fileName' | 'filePath' | 'fileSummary'> {
 		const fileName = this.getFileName(diff.path);
 		const filePath = diff.path;
 
@@ -593,13 +594,6 @@ export class SlideGenerator {
 		}
 
 		return {
-			authorName: '',
-			authorEmail: '',
-			commitDate: '',
-			messageTitle: '',
-			messageBody: '',
-			commitHash: '',
-			commitHashShort: '',
 			fileName,
 			filePath,
 			fileSummary

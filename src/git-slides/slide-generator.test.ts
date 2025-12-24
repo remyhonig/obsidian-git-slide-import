@@ -657,3 +657,486 @@ describe('Default Templates', () => {
 		expect(DEFAULT_SLIDE_TEMPLATE).toContain('{{code}}');
 	});
 });
+
+// ============================================================================
+// Template Variable Verification Tests
+// ============================================================================
+
+describe('Template Variable Passing', () => {
+	describe('commit variables in slide output', () => {
+		it('passes messageTitle correctly', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'TITLE:[{{messageTitle}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				message: 'Fix important bug\n\nThis is the body'
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('TITLE:[Fix important bug]');
+		});
+
+		it('passes messageBody correctly', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'BODY:[{{messageBody}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				message: 'Title line\n\nThis is the detailed body'
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('BODY:[This is the detailed body]');
+		});
+
+		it('passes authorName correctly', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'AUTHOR:[{{authorName}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				author: 'Alice Developer <alice@example.com>'
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('AUTHOR:[Alice Developer]');
+		});
+
+		it('passes authorEmail correctly', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'EMAIL:[{{authorEmail}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				author: 'Bob Coder <bob@company.org>'
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('EMAIL:[bob@company.org]');
+		});
+
+		it('passes commitHash correctly', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'HASH:[{{commitHash}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				hash: 'a1b2c3d4e5f6789012345678901234567890abcd'
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('HASH:[a1b2c3d4e5f6789012345678901234567890abcd]');
+		});
+
+		it('passes commitHashShort correctly', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'SHORT:[{{commitHashShort}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				hashShort: 'abc1234'
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('SHORT:[abc1234]');
+		});
+
+		it('passes commitDate correctly formatted', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'DATE:[{{commitDate}}]',
+				commitDetailsTemplate: '',
+				dateFormat: 'yyyy-MM-dd'
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				date: new Date('2024-06-15T10:30:00Z')
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('DATE:[2024-06-15]');
+		});
+	});
+
+	describe('file variables in slide output', () => {
+		it('passes fileName correctly (file name only)', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'FILE:[{{fileName}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit()];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({
+				path: 'src/components/Button.tsx',
+				hunks: [createHunk()]
+			})]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('FILE:[Button.tsx]');
+		});
+
+		it('passes filePath correctly (full path)', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'PATH:[{{filePath}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit()];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({
+				path: 'src/components/Button.tsx',
+				hunks: [createHunk()]
+			})]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('PATH:[src/components/Button.tsx]');
+		});
+
+		it('passes fileSummary correctly with multiple files', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'SUMMARY:[{{fileSummary}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit()];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [
+				createDiff({ path: 'main.ts', hunks: [createHunk()] }),
+				createDiff({ path: 'helper.ts', hunks: [createHunk()] }),
+				createDiff({ path: 'utils.ts', hunks: [createHunk()] })
+			]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			// First slide should have summary
+			expect(result).toContain('SUMMARY:[Also changed: helper.ts, utils.ts]');
+		});
+
+		it('passes empty fileSummary when only one file', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'SUMMARY:[{{fileSummary}}]END',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit()];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [
+				createDiff({ path: 'single.ts', hunks: [createHunk()] })
+			]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('SUMMARY:[]END');
+		});
+	});
+
+	describe('generated variables in slide output', () => {
+		it('passes code variable with diff content', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: '{{code}}',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit()];
+			const hunk = createHunk();
+			hunk.lines = [
+				{ type: 'context', content: 'const x = 1;', oldLineNumber: 1, newLineNumber: 1 },
+				{ type: 'added', content: 'const y = 2;', oldLineNumber: null, newLineNumber: 2 }
+			];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({
+				hunks: [hunk],
+				language: 'typescript'
+			})]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('```typescript');
+			expect(result).toContain('const y = 2;');
+		});
+
+		it('passes commitDetails variable from template', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'DETAILS:[{{commitDetails}}]',
+				commitDetailsTemplate: 'By {{authorName}} on {{commitDate}}'
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				author: 'Test Author <test@test.com>',
+				date: new Date('2024-03-15T10:00:00Z')
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('DETAILS:[By Test Author on Mar 15, 2024]');
+		});
+	});
+
+	describe('all variables together', () => {
+		it('passes all variables in a comprehensive template', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: `# {{fileName}}
+PATH: {{filePath}}
+AUTHOR: {{authorName}} <{{authorEmail}}>
+DATE: {{commitDate}}
+TITLE: {{messageTitle}}
+BODY: {{messageBody}}
+HASH: {{commitHashShort}}
+{{code}}`,
+				commitDetailsTemplate: '',
+				dateFormat: 'yyyy-MM-dd'
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				hash: 'abc123def456789',
+				hashShort: 'abc123d',
+				message: 'Add new feature\n\nThis implements the feature',
+				author: 'Jane Doe <jane@example.com>',
+				date: new Date('2024-07-20T15:30:00Z')
+			})];
+			const hunk = createHunk();
+			hunk.lines = [{ type: 'added', content: 'code here', oldLineNumber: null, newLineNumber: 1 }];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({
+				path: 'src/feature.ts',
+				hunks: [hunk],
+				language: 'typescript'
+			})]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('# feature.ts');
+			expect(result).toContain('PATH: src/feature.ts');
+			expect(result).toContain('AUTHOR: Jane Doe <jane@example.com>');
+			expect(result).toContain('DATE: 2024-07-20');
+			expect(result).toContain('TITLE: Add new feature');
+			expect(result).toContain('BODY: This implements the feature');
+			expect(result).toContain('HASH: abc123d');
+			expect(result).toContain('```typescript');
+		});
+	});
+
+	describe('commit-only slides (no files)', () => {
+		it('passes all commit variables to commit-only template', () => {
+			const options = createDefaultFormatOptions();
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				hash: 'fullhash123456',
+				hashShort: 'short12',
+				message: 'Initial commit\n\nSet up the project',
+				author: 'Project Lead <lead@project.com>',
+				date: new Date('2024-01-01T00:00:00Z')
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			// No files added - should use commit-only template
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('## Initial commit');
+			expect(result).toContain('Set up the project');
+			expect(result).toContain('Project Lead');
+			expect(result).toContain('lead@project.com');
+			expect(result).toContain('short12');
+		});
+	});
+
+	describe('variables in commitDetails template', () => {
+		it('passes messageTitle to commitDetails template', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				commitDetailsTemplate: 'COMMIT_TITLE:[{{messageTitle}}]',
+				slideTemplate: '{{commitDetails}}'
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				message: 'Fix: Resolve memory leak\n\nFixed leak in module X'
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('COMMIT_TITLE:[Fix: Resolve memory leak]');
+		});
+
+		it('passes messageBody to commitDetails template', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				commitDetailsTemplate: 'COMMIT_BODY:[{{messageBody}}]',
+				slideTemplate: '{{commitDetails}}'
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				message: 'Title\n\nDetailed body text here'
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('COMMIT_BODY:[Detailed body text here]');
+		});
+
+		it('passes all commit variables to commitDetails template', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				commitDetailsTemplate: '{{authorName}}|{{authorEmail}}|{{commitDate}}|{{messageTitle}}|{{commitHashShort}}',
+				slideTemplate: '{{commitDetails}}',
+				dateFormat: 'yyyy'
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({
+				hashShort: 'xyz789',
+				message: 'Test title\n\nBody',
+				author: 'Author Name <author@mail.com>',
+				date: new Date('2025-01-01T00:00:00Z')
+			})];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toBe('Author Name|author@mail.com|2025|Test title|xyz789');
+		});
+	});
+
+	describe('edge cases for variable passing', () => {
+		it('handles empty commit message', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'TITLE:[{{messageTitle}}] BODY:[{{messageBody}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({ message: '' })];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('TITLE:[] BODY:[]');
+		});
+
+		it('handles author without email', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'NAME:[{{authorName}}] EMAIL:[{{authorEmail}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({ author: 'Just A Name' })];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('NAME:[Just A Name]');
+			expect(result).toContain('EMAIL:[]');
+		});
+
+		it('handles file at root (no directory)', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'NAME:[{{fileName}}] PATH:[{{filePath}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit()];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({
+				path: 'README.md',
+				hunks: [createHunk()]
+			})]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('NAME:[README.md]');
+			expect(result).toContain('PATH:[README.md]');
+		});
+
+		it('handles single-line commit message (no body)', () => {
+			const options = {
+				...createDefaultFormatOptions(),
+				slideTemplate: 'TITLE:[{{messageTitle}}] BODY:[{{messageBody}}]',
+				commitDetailsTemplate: ''
+			};
+			const generator = new SlideGenerator(options);
+
+			const commits = [createCommit({ message: 'Single line only' })];
+			const diffs = new Map<string, GitFileDiff[]>();
+			diffs.set(commits[0]!.hash, [createDiff({ hunks: [createHunk()] })]);
+
+			const result = generator.generateSlides(commits, diffs);
+
+			expect(result).toContain('TITLE:[Single line only]');
+			expect(result).toContain('BODY:[]');
+		});
+	});
+});
