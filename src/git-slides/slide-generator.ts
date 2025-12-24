@@ -9,7 +9,7 @@ import { generateHighlightString, formatDiffContent, deindent } from './diff-par
  * Create a code fence that won't break if content contains backticks.
  * Uses more backticks than the longest sequence found in the content.
  */
-function createSafeCodeBlock(content: string, langSpec: string): string {
+export function createSafeCodeBlock(content: string, langSpec: string): string {
 	// Find the longest sequence of backticks in the content
 	const backtickMatches = content.match(/`+/g);
 	const maxBackticks = backtickMatches
@@ -706,5 +706,113 @@ export function createDefaultFormatOptions(): SlideFormatOptions {
 		commitDetailsTemplate: DEFAULT_COMMIT_DETAILS_TEMPLATE,
 		slideTemplate: DEFAULT_SLIDE_TEMPLATE,
 		dateFormat: 'MMM d, yyyy'
+	};
+}
+
+// ============================================================================
+// Exported utilities for testing
+// ============================================================================
+
+/**
+ * Parse commit message into title and body (exported for testing)
+ */
+export function parseCommitMessage(message: string): { title: string; body: string } {
+	if (!message) {
+		return { title: '', body: '' };
+	}
+
+	// Check for empty line separator (standard git convention)
+	const emptyLineMatch = message.match(/^(.+?)\n\s*\n([\s\S]*)$/);
+	if (emptyLineMatch) {
+		return {
+			title: emptyLineMatch[1]?.trim() ?? '',
+			body: emptyLineMatch[2]?.trim() ?? ''
+		};
+	}
+
+	// Check for simple newline separator
+	const newlineIndex = message.indexOf('\n');
+	if (newlineIndex !== -1) {
+		return {
+			title: message.slice(0, newlineIndex).trim(),
+			body: message.slice(newlineIndex + 1).trim()
+		};
+	}
+
+	// If very long single line (>72 chars), try to split at first period
+	if (message.length > 72) {
+		const periodIndex = message.indexOf('. ');
+		if (periodIndex !== -1 && periodIndex < 100) {
+			return {
+				title: message.slice(0, periodIndex + 1).trim(),
+				body: message.slice(periodIndex + 2).trim()
+			};
+		}
+	}
+
+	// Single line message, no body
+	return { title: message.trim(), body: '' };
+}
+
+/**
+ * Render a template with variables (exported for testing)
+ */
+export function renderTemplate(
+	template: string,
+	vars: Record<string, string | undefined>
+): string {
+	let result = template;
+
+	// Substitute variables: {{var}}
+	// If a line contains only a variable that resolves to empty, remove the entire line
+	result = result.replace(/^[ \t]*\{\{(\w+)\}\}[ \t]*$/gm, (_, varName: string) => {
+		const value = vars[varName]?.trim();
+		return value ?? '';
+	});
+
+	// Substitute remaining inline variables
+	result = result.replace(/\{\{(\w+)\}\}/g, (_, varName: string) => {
+		return vars[varName] ?? '';
+	});
+
+	// Clean up multiple consecutive blank lines
+	result = result.replace(/\n{3,}/g, '\n\n');
+
+	return result.trim();
+}
+
+/**
+ * Format a date with a format string (exported for testing)
+ */
+export function formatDateWithFormat(date: Date, format: string): string {
+	const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+	const fullMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+	const day = date.getDate();
+	const month = date.getMonth();
+	const year = date.getFullYear();
+	const hours = date.getHours();
+	const minutes = date.getMinutes();
+
+	return format
+		.replace('yyyy', String(year))
+		.replace('yy', String(year).slice(-2))
+		.replace('MMMM', fullMonths[month] ?? '')
+		.replace('MMM', months[month] ?? '')
+		.replace('MM', String(month + 1).padStart(2, '0'))
+		.replace('dd', String(day).padStart(2, '0'))
+		.replace('d', String(day))
+		.replace('HH', String(hours).padStart(2, '0'))
+		.replace('mm', String(minutes).padStart(2, '0'));
+}
+
+/**
+ * Parse author string into name and email (exported for testing)
+ */
+export function parseAuthor(author: string): { name: string; email: string } {
+	const match = author.match(/^(.+?)\s*<(.+)>$/);
+	return {
+		name: match ? match[1]?.trim() ?? author : author,
+		email: match ? match[2]?.trim() ?? '' : ''
 	};
 }
