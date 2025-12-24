@@ -71,8 +71,10 @@ export class GitService {
 	 * Returns commits in chronological order (oldest first)
 	 */
 	async getCommits(filter: CommitFilter): Promise<GitCommit[]> {
+		// Use null byte as field separator and record separator to handle multi-line messages
+		// Format: hash, short hash, full message, author, date
 		const options: string[] = [
-			'--format=%H|%h|%s|%an|%aI',
+			'--format=%H%x00%h%x00%B%x00%an%x00%aI%x00%x00',
 			`-n${filter.maxCommits || 50}`
 		];
 
@@ -247,19 +249,20 @@ export class GitService {
 	}
 
 	private parseLogOutput(output: string): GitCommit[] {
-		return output.trim().split('\n')
-			.filter(line => line.length > 0)
-			.map(line => {
-				const parts = line.split('|');
-				return {
-					hash: parts[0] || '',
-					hashShort: parts[1] || '',
-					message: parts[2] || '',
-					author: parts[3] || '',
-					date: new Date(parts[4] || ''),
-					files: []
-				};
-			});
+		// Split by double null byte (record separator), then parse each record
+		const records = output.split('\x00\x00').filter(r => r.trim().length > 0);
+
+		return records.map(record => {
+			const parts = record.split('\x00');
+			return {
+				hash: parts[0]?.trim() || '',
+				hashShort: parts[1]?.trim() || '',
+				message: parts[2]?.trim() || '',
+				author: parts[3]?.trim() || '',
+				date: new Date(parts[4]?.trim() || ''),
+				files: []
+			};
+		});
 	}
 
 	private parseFileStatus(output: string): GitFileChange[] {

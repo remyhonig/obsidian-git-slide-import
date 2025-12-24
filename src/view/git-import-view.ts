@@ -183,10 +183,42 @@ export class GitImportView extends ItemView {
 		true
 	);
 
+	// Debounced settings save
+	private debouncedSaveSettings = debounce(
+		() => { void this.saveSettings(); },
+		500,
+		true
+	);
+
 	constructor(leaf: WorkspaceLeaf, plugin: GitSlideImportPlugin) {
 		super(leaf);
 		this.plugin = plugin;
 		this.formatOptions = this.createFormatOptionsFromDefaults();
+		// Load file filters from settings
+		this.includePattern = this.plugin.settings.fileFilters.includePattern;
+		this.excludePattern = this.plugin.settings.fileFilters.excludePattern;
+	}
+
+	/**
+	 * Save current format options and filters to plugin settings
+	 */
+	private async saveSettings(): Promise<void> {
+		// Update format defaults from current options
+		this.plugin.settings.formatDefaults.highlightAddedLines = this.formatOptions.highlightAddedLines;
+		this.plugin.settings.formatDefaults.highlightMode = this.formatOptions.highlightMode;
+		this.plugin.settings.formatDefaults.lineChangeDisplay = this.formatOptions.lineChangeDisplay;
+		this.plugin.settings.formatDefaults.showFullFile = this.formatOptions.showFullFile;
+		this.plugin.settings.formatDefaults.contextLines = this.formatOptions.contextLines;
+		this.plugin.settings.formatDefaults.slideOrganization = this.formatOptions.slideOrganization;
+		this.plugin.settings.formatDefaults.commitDetailsTemplate = this.formatOptions.commitDetailsTemplate;
+		this.plugin.settings.formatDefaults.slideTemplate = this.formatOptions.slideTemplate;
+		this.plugin.settings.formatDefaults.dateFormat = this.formatOptions.dateFormat;
+
+		// Update file filters
+		this.plugin.settings.fileFilters.includePattern = this.includePattern;
+		this.plugin.settings.fileFilters.excludePattern = this.excludePattern;
+
+		await this.plugin.saveSettings();
 	}
 
 	getViewType(): string {
@@ -442,6 +474,42 @@ export class GitImportView extends ItemView {
 		emptyState.createDiv({ cls: 'git-import-empty-message', text: message });
 	}
 
+	private renderClickableVariables(
+		container: HTMLElement,
+		variables: string[],
+		getTextarea: () => HTMLTextAreaElement | null
+	): void {
+		const varsContainer = container.createDiv({ cls: 'git-import-template-vars' });
+
+		for (const varName of variables) {
+			const varTag = varsContainer.createSpan({
+				cls: 'git-import-var-tag',
+				text: `{{${varName}}}`
+			});
+
+			varTag.addEventListener('click', () => {
+				const textarea = getTextarea();
+				if (!textarea) return;
+
+				const varText = `{{${varName}}}`;
+				const start = textarea.selectionStart;
+				const end = textarea.selectionEnd;
+				const value = textarea.value;
+
+				// Insert at cursor position
+				textarea.value = value.slice(0, start) + varText + value.slice(end);
+
+				// Move cursor after inserted text
+				const newPos = start + varText.length;
+				textarea.setSelectionRange(newPos, newPos);
+				textarea.focus();
+
+				// Trigger change event
+				textarea.dispatchEvent(new Event('input', { bubbles: true }));
+			});
+		}
+	}
+
 	private updateFocusHighlight(): void {
 		// Remove all focus highlights from list items
 		this.commitListEl?.querySelectorAll('.git-import-commit').forEach(el => {
@@ -571,6 +639,7 @@ export class GitImportView extends ItemView {
 				if (this.excludeInputEl) this.excludeInputEl.value = preset.exclude;
 				// Reload commits - some may now be filtered out
 				void this.loadCommits();
+				this.debouncedSaveSettings();
 			}
 		});
 
@@ -587,6 +656,7 @@ export class GitImportView extends ItemView {
 			this.includePattern = this.includeInputEl?.value ?? '';
 			// Reload commits - some may now be filtered out
 			void this.loadCommits();
+			this.debouncedSaveSettings();
 		});
 
 		// Exclude pattern (secondary - refinement, collapsible)
@@ -611,6 +681,7 @@ export class GitImportView extends ItemView {
 			this.excludePattern = this.excludeInputEl?.value ?? '';
 			// Reload commits - some may now be filtered out
 			void this.loadCommits();
+			this.debouncedSaveSettings();
 		});
 
 		// Toggle collapse behavior
@@ -819,6 +890,7 @@ export class GitImportView extends ItemView {
 				option.addClass('is-selected');
 				this.formatOptions.slideOrganization = mode.value;
 				this.debouncedUpdatePreview();
+				this.debouncedSaveSettings();
 			});
 		}
 
@@ -955,6 +1027,7 @@ export class GitImportView extends ItemView {
 				this.formatOptions.highlightMode = mode.value.endsWith('-stepped') ? 'stepped' : 'all';
 				this.previewCache.clear();
 				this.debouncedUpdatePreview();
+				this.debouncedSaveSettings();
 			});
 		}
 
@@ -1022,6 +1095,7 @@ export class GitImportView extends ItemView {
 				this.formatOptions.lineChangeDisplay = mode.value as 'additions-only' | 'full-diff';
 				this.previewCache.clear();
 				this.debouncedUpdatePreview();
+				this.debouncedSaveSettings();
 			});
 		}
 
@@ -1038,6 +1112,7 @@ export class GitImportView extends ItemView {
 					this.formatOptions.contextLines = value;
 					this.previewCache.clear();
 					this.debouncedUpdatePreview();
+					this.debouncedSaveSettings();
 				}));
 
 		// Templates section header
@@ -1045,15 +1120,23 @@ export class GitImportView extends ItemView {
 
 		// Commit details template
 		const commitDetailsTemplateEl = container.createDiv({ cls: 'git-import-setting git-import-template-setting' });
+		const commitDetailsVars = ['authorName', 'authorEmail', 'commitDate', 'messageTitle', 'messageBody', 'commitHash', 'commitHashShort'];
+		let commitDetailsTextarea: HTMLTextAreaElement | null = null;
+
 		new Setting(commitDetailsTemplateEl)
 			.setName('Commit details')
-			.setDesc('Variables: {{authorName}}, {{authorEmail}}, {{commitDate}}, {{messageTitle}}, {{messageBody}}, {{commitHash}}, {{commitHashShort}}')
-			.addTextArea(text => text
-				.setValue(this.formatOptions.commitDetailsTemplate)
-				.onChange(value => {
-					this.formatOptions.commitDetailsTemplate = value;
-					this.debouncedUpdatePreview();
-				}));
+			.addTextArea(text => {
+				commitDetailsTextarea = text.inputEl;
+				text.setValue(this.formatOptions.commitDetailsTemplate)
+					.onChange(value => {
+						this.formatOptions.commitDetailsTemplate = value;
+						this.debouncedUpdatePreview();
+						this.debouncedSaveSettings();
+					});
+			});
+
+		// Add clickable variables
+		this.renderClickableVariables(commitDetailsTemplateEl, commitDetailsVars, () => commitDetailsTextarea);
 
 		// Add reset button for commit details template
 		const commitDetailsResetBtn = commitDetailsTemplateEl.createEl('button', {
@@ -1062,22 +1145,29 @@ export class GitImportView extends ItemView {
 		});
 		commitDetailsResetBtn.addEventListener('click', () => {
 			this.formatOptions.commitDetailsTemplate = DEFAULT_COMMIT_DETAILS_TEMPLATE;
-			const textarea = commitDetailsTemplateEl.querySelector('textarea');
-			if (textarea) textarea.value = DEFAULT_COMMIT_DETAILS_TEMPLATE;
+			if (commitDetailsTextarea) commitDetailsTextarea.value = DEFAULT_COMMIT_DETAILS_TEMPLATE;
 			this.debouncedUpdatePreview();
 		});
 
 		// Slide template
 		const slideTemplateEl = container.createDiv({ cls: 'git-import-setting git-import-template-setting' });
+		const slideVars = ['fileName', 'filePath', 'fileSummary', 'code', 'commitDetails', ...commitDetailsVars];
+		let slideTextarea: HTMLTextAreaElement | null = null;
+
 		new Setting(slideTemplateEl)
 			.setName('Slide template')
-			.setDesc('Variables: {{fileName}}, {{filePath}}, {{fileSummary}}, {{code}}, {{commitDetails}} + all commit variables')
-			.addTextArea(text => text
-				.setValue(this.formatOptions.slideTemplate)
-				.onChange(value => {
-					this.formatOptions.slideTemplate = value;
-					this.debouncedUpdatePreview();
-				}));
+			.addTextArea(text => {
+				slideTextarea = text.inputEl;
+				text.setValue(this.formatOptions.slideTemplate)
+					.onChange(value => {
+						this.formatOptions.slideTemplate = value;
+						this.debouncedUpdatePreview();
+						this.debouncedSaveSettings();
+					});
+			});
+
+		// Add clickable variables
+		this.renderClickableVariables(slideTemplateEl, slideVars, () => slideTextarea);
 
 		// Add reset button for slide template
 		const slideResetBtn = slideTemplateEl.createEl('button', {
@@ -1086,8 +1176,7 @@ export class GitImportView extends ItemView {
 		});
 		slideResetBtn.addEventListener('click', () => {
 			this.formatOptions.slideTemplate = DEFAULT_SLIDE_TEMPLATE;
-			const textarea = slideTemplateEl.querySelector('textarea');
-			if (textarea) textarea.value = DEFAULT_SLIDE_TEMPLATE;
+			if (slideTextarea) slideTextarea.value = DEFAULT_SLIDE_TEMPLATE;
 			this.debouncedUpdatePreview();
 		});
 
@@ -1100,6 +1189,7 @@ export class GitImportView extends ItemView {
 				.setValue(this.formatOptions.dateFormat)
 				.onChange(value => {
 					this.formatOptions.dateFormat = value;
+					this.debouncedSaveSettings();
 					this.debouncedUpdatePreview();
 				}));
 	}

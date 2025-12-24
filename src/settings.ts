@@ -20,8 +20,14 @@ export interface SlideFormatDefaults {
 	dateFormat: string;
 }
 
+export interface FileFilterSettings {
+	includePattern: string;
+	excludePattern: string;
+}
+
 export interface PluginSettings {
 	formatDefaults: SlideFormatDefaults;
+	fileFilters: FileFilterSettings;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -37,6 +43,10 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 		commitDetailsTemplate: DEFAULT_COMMIT_DETAILS_TEMPLATE,
 		slideTemplate: DEFAULT_SLIDE_TEMPLATE,
 		dateFormat: 'MMM d, yyyy'
+	},
+	fileFilters: {
+		includePattern: '',
+		excludePattern: ''
 	}
 };
 

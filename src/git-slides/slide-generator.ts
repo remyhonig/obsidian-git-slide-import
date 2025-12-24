@@ -482,12 +482,55 @@ export class SlideGenerator {
 	}
 
 	/**
+	 * Parse commit message into title and body
+	 * Rules:
+	 * 1. First line is the title, after one or more empty lines the body follows
+	 * 2. If no empty line but there's a newline, split at first newline
+	 * 3. If no newline but first line is very long (>72 chars), split at first period
+	 */
+	private parseCommitMessage(message: string): { title: string; body: string } {
+		if (!message) {
+			return { title: '', body: '' };
+		}
+
+		// Check for empty line separator (standard git convention)
+		const emptyLineMatch = message.match(/^(.+?)\n\s*\n([\s\S]*)$/);
+		if (emptyLineMatch) {
+			return {
+				title: emptyLineMatch[1]?.trim() ?? '',
+				body: emptyLineMatch[2]?.trim() ?? ''
+			};
+		}
+
+		// Check for simple newline separator
+		const newlineIndex = message.indexOf('\n');
+		if (newlineIndex !== -1) {
+			return {
+				title: message.slice(0, newlineIndex).trim(),
+				body: message.slice(newlineIndex + 1).trim()
+			};
+		}
+
+		// If very long single line (>72 chars), try to split at first period
+		if (message.length > 72) {
+			const periodIndex = message.indexOf('. ');
+			if (periodIndex !== -1 && periodIndex < 100) {
+				return {
+					title: message.slice(0, periodIndex + 1).trim(),
+					body: message.slice(periodIndex + 2).trim()
+				};
+			}
+		}
+
+		// Single line message, no body
+		return { title: message.trim(), body: '' };
+	}
+
+	/**
 	 * Extract commit-related template variables
 	 */
 	private getCommitVariables(commit: GitCommit): TemplateVariables {
-		const messageParts = commit.message.split('\n');
-		const messageTitle = messageParts[0] ?? commit.message;
-		const messageBody = messageParts.slice(1).join('\n').trim();
+		const { title: messageTitle, body: messageBody } = this.parseCommitMessage(commit.message);
 
 		// Parse author name and email (format: "Name <email>" or just "Name")
 		const authorMatch = commit.author.match(/^(.+?)\s*<(.+)>$/);
