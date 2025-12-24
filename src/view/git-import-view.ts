@@ -334,9 +334,12 @@ export class GitImportView extends ItemView {
 		// Focus appropriate element and auto-select first item when needed
 		if (this.focusedColumn === 'commits') {
 			this.commitListEl?.focus();
+			// Keep current selection if valid, otherwise select first
 			if (this.commits.length > 0) {
-				this.focusedCommitIndex = 0;
-				const commit = this.commits[0];
+				if (this.focusedCommitIndex < 0 || this.focusedCommitIndex >= this.commits.length) {
+					this.focusedCommitIndex = 0;
+				}
+				const commit = this.commits[this.focusedCommitIndex];
 				if (commit) {
 					void this.selectCommit(commit);
 				}
