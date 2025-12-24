@@ -56,17 +56,10 @@ export class PluginSettingTab extends ObsidianPluginSettingTab {
 			cls: 'setting-item-description'
 		});
 
-		new Setting(containerEl)
-			.setName('Highlight added lines')
-			.setDesc('Use reveal.js line highlight syntax for added lines')
-			.addToggle(toggle => toggle
-				.setValue(this.plugin.settings.formatDefaults.highlightAddedLines)
-				.onChange(async (value) => {
-					this.plugin.settings.formatDefaults.highlightAddedLines = value;
-					await this.plugin.saveSettings();
-				}));
-
 		const getDisplayModeValue = (): string => {
+			if (!this.plugin.settings.formatDefaults.highlightAddedLines) {
+				return this.plugin.settings.formatDefaults.showFullFile ? 'full-plain' : 'diff-plain';
+			}
 			if (this.plugin.settings.formatDefaults.showFullFile) {
 				return this.plugin.settings.formatDefaults.highlightMode === 'stepped' ? 'full-stepped' : 'full-all';
 			}
@@ -74,15 +67,18 @@ export class PluginSettingTab extends ObsidianPluginSettingTab {
 		};
 		new Setting(containerEl)
 			.setName('Code display')
-			.setDesc('What code to show and how to reveal highlights')
+			.setDesc('What code to show and how to highlight new lines')
 			.addDropdown(dropdown => dropdown
-				.addOption('diff-all', 'Changed lines only')
+				.addOption('diff-plain', 'Changed lines only')
+				.addOption('diff-all', 'Changed lines, highlight new')
 				.addOption('diff-stepped', 'Changed lines, stepped reveal')
-				.addOption('full-all', 'Complete file')
+				.addOption('full-plain', 'Complete file')
+				.addOption('full-all', 'Complete file, highlight new')
 				.addOption('full-stepped', 'Complete file, stepped reveal')
 				.setValue(getDisplayModeValue())
 				.onChange(async (value) => {
 					this.plugin.settings.formatDefaults.showFullFile = value.startsWith('full-');
+					this.plugin.settings.formatDefaults.highlightAddedLines = !value.endsWith('-plain');
 					this.plugin.settings.formatDefaults.highlightMode = value.endsWith('-stepped') ? 'stepped' : 'all';
 					await this.plugin.saveSettings();
 				}));

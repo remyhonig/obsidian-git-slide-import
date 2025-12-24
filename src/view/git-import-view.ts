@@ -47,6 +47,11 @@ const FILTER_PRESETS: FilterPreset[] = [
 		exclude: ''
 	},
 	{
+		name: 'Markdown',
+		include: '\\.md$',
+		exclude: ''
+	},
+	{
 		name: 'JavaScript/TypeScript',
 		include: '\\.(ts|js|tsx|jsx|mjs|cjs|json|yaml|yml)$',
 		exclude: '(node_modules|dist|build|\\.min\\.|package-lock\\.json|yarn\\.lock|pnpm-lock\\.yaml)$'
@@ -369,18 +374,13 @@ export class GitImportView extends ItemView {
 
 	private toggleCurrentSelection(): void {
 		if (this.focusedColumn === 'commits') {
+			// Space on commit = select it and move focus to files
 			const commit = this.commits[this.focusedCommitIndex];
 			if (commit) {
-				const isSelected = this.selectedCommitHashes.has(commit.hash);
-				if (isSelected) {
-					this.selectedCommitHashes.delete(commit.hash);
-					this.selectedFiles.delete(commit.hash);
-				} else {
-					this.selectedCommitHashes.add(commit.hash);
-				}
-				this.updateCommitCheckbox(commit.hash, !isSelected);
-				this.updateImportButton();
-				this.debouncedUpdatePreview();
+				void this.selectCommit(commit);
+				this.focusedColumn = 'files';
+				this.focusedFileIndex = 0;
+				this.updateFocusHighlight();
 			}
 		} else if (this.focusedColumn === 'files') {
 			const file = this.currentFiles[this.focusedFileIndex];
@@ -396,11 +396,11 @@ export class GitImportView extends ItemView {
 					selectedForCommit.delete(file.path);
 				} else {
 					selectedForCommit.add(file.path);
-					// Also select the commit
+					// Also mark the commit as having selections
 					this.selectedCommitHashes.add(commitHash);
-					this.updateCommitCheckbox(commitHash, true);
 				}
 				this.updateFileCheckbox(file.path, !isSelected);
+				this.updateCommitHasSelections(commitHash);
 				this.updateImportButton();
 				this.debouncedUpdatePreview();
 			}
@@ -565,42 +565,69 @@ export class GitImportView extends ItemView {
 				this.excludePattern = preset.exclude;
 				if (this.includeInputEl) this.includeInputEl.value = preset.include;
 				if (this.excludeInputEl) this.excludeInputEl.value = preset.exclude;
-				if (this.selectedCommit) {
-					void this.loadFilesForCommit(this.selectedCommit);
-				}
+				// Reload commits - some may now be filtered out
+				void this.loadCommits();
 			}
 		});
 
-		// Include pattern
-		const includeGroup = section.createDiv({ cls: 'git-import-filter-group git-import-filter-regex' });
-		includeGroup.createEl('label', { text: 'Include:' });
-		this.includeInputEl = includeGroup.createEl('input', {
+		// Focus pattern (primary filter - what you care about)
+		const focusGroup = section.createDiv({ cls: 'git-import-filter-group git-import-filter-regex' });
+		focusGroup.createEl('label', { text: 'Focus on:' });
+		this.includeInputEl = focusGroup.createEl('input', {
 			type: 'text',
-			placeholder: 'regex pattern',
+			placeholder: 'e.g. \\.md$',
 			value: this.includePattern,
 			cls: 'git-import-regex-input'
 		});
 		this.includeInputEl.addEventListener('change', () => {
 			this.includePattern = this.includeInputEl?.value ?? '';
-			if (this.selectedCommit) {
-				void this.loadFilesForCommit(this.selectedCommit);
-			}
+			// Reload commits - some may now be filtered out
+			void this.loadCommits();
 		});
 
-		// Exclude pattern
-		const excludeGroup = section.createDiv({ cls: 'git-import-filter-group git-import-filter-regex' });
-		excludeGroup.createEl('label', { text: 'Exclude:' });
+		// Exclude pattern (secondary - refinement, collapsible)
+		const excludeWrapper = section.createDiv({ cls: 'git-import-exclude-wrapper' });
+
+		// Toggle button for exclude section
+		const excludeToggle = excludeWrapper.createEl('button', {
+			cls: 'git-import-exclude-toggle clickable-icon',
+			attr: { 'aria-label': 'Toggle exclude filter' }
+		});
+		setIcon(excludeToggle, 'chevron-right');
+
+		const excludeGroup = excludeWrapper.createDiv({ cls: 'git-import-filter-group git-import-filter-regex git-import-exclude-content is-collapsed' });
+		excludeGroup.createEl('label', { text: 'Also exclude:' });
 		this.excludeInputEl = excludeGroup.createEl('input', {
 			type: 'text',
-			placeholder: 'regex pattern',
+			placeholder: 'e.g. \\.lock$',
 			value: this.excludePattern,
 			cls: 'git-import-regex-input'
 		});
 		this.excludeInputEl.addEventListener('change', () => {
 			this.excludePattern = this.excludeInputEl?.value ?? '';
-			if (this.selectedCommit) {
-				void this.loadFilesForCommit(this.selectedCommit);
+			// Reload commits - some may now be filtered out
+			void this.loadCommits();
+		});
+
+		// Toggle collapse behavior
+		excludeToggle.addEventListener('click', () => {
+			const isCollapsed = excludeGroup.classList.toggle('is-collapsed');
+			setIcon(excludeToggle, isCollapsed ? 'chevron-right' : 'chevron-down');
+			// If expanded and has a value, highlight it
+			if (!isCollapsed && this.excludePattern) {
+				excludeToggle.classList.add('has-value');
 			}
+		});
+
+		// Show indicator if exclude has a value while collapsed
+		if (this.excludePattern) {
+			excludeToggle.classList.add('has-value');
+		}
+
+		// Update indicator when exclude changes
+		this.excludeInputEl.addEventListener('input', () => {
+			const hasValue = (this.excludeInputEl?.value ?? '').length > 0;
+			excludeToggle.classList.toggle('has-value', hasValue);
 		});
 	}
 
@@ -615,12 +642,20 @@ export class GitImportView extends ItemView {
 		// Column 1: Selection (Commits above Files)
 		this.selectionPanelEl = panels.createDiv({ cls: 'git-import-panel git-import-panel-selection' });
 
+		// Resize handle for first column
+		const resizeHandle = panels.createDiv({ cls: 'git-import-resize-handle' });
+		this.setupResizeHandle(resizeHandle, this.selectionPanelEl);
+
 		// Commits section (top half)
 		this.commitPanelEl = this.selectionPanelEl.createDiv({ cls: 'git-import-section git-import-section-commits' });
 		this.commitPanelEl.createDiv({ cls: 'git-import-panel-header', text: 'Commits' });
 		this.commitListEl = this.commitPanelEl.createDiv({ cls: 'git-import-panel-content' });
 		this.commitListEl.setAttribute('tabindex', '0');
 		this.renderEmptyState(this.commitListEl, 'folder-open', 'Select a repository');
+
+		// Vertical resize handle between commits and files
+		const verticalResizeHandle = this.selectionPanelEl.createDiv({ cls: 'git-import-resize-handle-vertical' });
+		this.setupVerticalResizeHandle(verticalResizeHandle, this.commitPanelEl);
 
 		// Files section (bottom half)
 		this.filePanelEl = this.selectionPanelEl.createDiv({ cls: 'git-import-section git-import-section-files' });
@@ -691,37 +726,104 @@ export class GitImportView extends ItemView {
 	}
 
 	private buildSettingsPanel(container: HTMLElement): void {
-		// Slide organization
-		const orgSetting = container.createDiv({ cls: 'git-import-setting' });
-		new Setting(orgSetting)
-			.setName('Slide organization')
-			.setDesc('Flat: one slide per file. Grouped: commit intro + vertical subslides per file. Progressive: same file evolving across commits. Per-hunk: each diff hunk gets its own slide.')
-			.addDropdown(dropdown => dropdown
-				.addOption('flat', 'Flat')
-				.addOption('grouped', 'Grouped by commit')
-				.addOption('progressive', 'Progressive')
-				.addOption('per-hunk', 'Per hunk')
-				.setValue(this.formatOptions.slideOrganization)
-				.onChange(value => {
-					this.formatOptions.slideOrganization = value as SlideOrganization;
-					this.debouncedUpdatePreview();
-				}));
+		// Slide organization with visual diagrams
+		const orgSetting = container.createDiv({ cls: 'git-import-setting git-import-org-setting' });
+		orgSetting.createEl('div', { cls: 'setting-item-name', text: 'Slide organization' });
 
-		// Highlight added lines
-		const highlightSetting = container.createDiv({ cls: 'git-import-setting' });
-		new Setting(highlightSetting)
-			.setName('Highlight new code')
-			.setDesc('Draw attention to added lines using reveal.js line highlight syntax.')
-			.addToggle(toggle => toggle
-				.setValue(this.formatOptions.highlightAddedLines)
-				.onChange(value => {
-					this.formatOptions.highlightAddedLines = value;
-					this.debouncedUpdatePreview();
-				}));
+		const orgOptions = orgSetting.createDiv({ cls: 'git-import-org-options' });
 
-		// Combined code display mode (full file + reveal style)
+		// Colors = commits (blue = commit A, green = commit B)
+		// Shapes = files (circle = file1, square = file2)
+		const blue = '#4a9eff';
+		const green = '#4ade80';
+		const muted = '#888';
+
+		const modes: { value: SlideOrganization; label: string; desc: string; svg: string }[] = [
+			{
+				value: 'flat',
+				label: 'Flat',
+				desc: 'Chronological. One slide per file, no grouping.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<circle cx="10" cy="14" r="6" fill="${blue}"/>
+					<rect x="22" y="8" width="12" height="12" rx="2" fill="${blue}"/>
+					<circle cx="50" cy="14" r="6" fill="${green}"/>
+					<rect x="62" y="8" width="12" height="12" rx="2" fill="${green}"/>
+					<path d="M17 14h4M35 14h8M57 14h4" stroke="${muted}" stroke-width="1"/>
+				</svg>`
+			},
+			{
+				value: 'grouped',
+				label: 'Grouped',
+				desc: 'Chronological. Files as vertical subslides within each commit.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<circle cx="10" cy="6" r="5" fill="${blue}"/>
+					<rect x="5" y="15" width="10" height="10" rx="2" fill="${blue}" opacity="0.6"/>
+					<circle cx="50" cy="6" r="5" fill="${green}"/>
+					<rect x="45" y="15" width="10" height="10" rx="2" fill="${green}" opacity="0.6"/>
+					<path d="M10 12v2M50 12v2" stroke="${muted}" stroke-width="1" stroke-dasharray="2,1"/>
+					<path d="M22 6h20M62 6h10" stroke="${muted}" stroke-width="1"/>
+				</svg>`
+			},
+			{
+				value: 'progressive',
+				label: 'By file',
+				desc: 'Grouped by file. Shows each file evolving across commits.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<circle cx="10" cy="14" r="6" fill="${blue}"/>
+					<circle cx="28" cy="14" r="6" fill="${green}"/>
+					<rect x="42" y="8" width="12" height="12" rx="2" fill="${blue}"/>
+					<rect x="62" y="8" width="12" height="12" rx="2" fill="${green}"/>
+					<path d="M17 14h4M35 14h6M55 14h6" stroke="${muted}" stroke-width="1"/>
+				</svg>`
+			},
+			{
+				value: 'per-hunk',
+				label: 'Per hunk',
+				desc: 'Chronological. Each diff section becomes a separate slide.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<circle cx="6" cy="14" r="4" fill="${blue}"/>
+					<circle cx="18" cy="14" r="4" fill="${blue}"/>
+					<rect x="26" y="10" width="8" height="8" rx="1" fill="${blue}"/>
+					<circle cx="44" cy="14" r="4" fill="${green}"/>
+					<rect x="52" y="10" width="8" height="8" rx="1" fill="${green}"/>
+					<rect x="66" y="10" width="8" height="8" rx="1" fill="${green}"/>
+				</svg>`
+			}
+		];
+
+		for (const mode of modes) {
+			const option = orgOptions.createDiv({
+				cls: `git-import-org-option ${this.formatOptions.slideOrganization === mode.value ? 'is-selected' : ''}`
+			});
+
+			// SVG diagram
+			const svgContainer = option.createDiv({ cls: 'git-import-org-svg' });
+			const parser = new DOMParser();
+			const svgDoc = parser.parseFromString(mode.svg, 'image/svg+xml');
+			const svgEl = svgDoc.documentElement;
+			if (svgEl instanceof SVGElement) {
+				svgContainer.appendChild(svgEl);
+			}
+
+			// Label and description
+			const textContainer = option.createDiv({ cls: 'git-import-org-text' });
+			textContainer.createDiv({ cls: 'git-import-org-label', text: mode.label });
+			textContainer.createDiv({ cls: 'git-import-org-desc', text: mode.desc });
+
+			option.addEventListener('click', () => {
+				orgOptions.querySelectorAll('.git-import-org-option').forEach(el => el.removeClass('is-selected'));
+				option.addClass('is-selected');
+				this.formatOptions.slideOrganization = mode.value;
+				this.debouncedUpdatePreview();
+			});
+		}
+
+		// Combined code display mode (full file vs diff, highlight style)
 		const displayModeSetting = container.createDiv({ cls: 'git-import-setting' });
 		const getDisplayModeValue = (): string => {
+			if (!this.formatOptions.highlightAddedLines) {
+				return this.formatOptions.showFullFile ? 'full-plain' : 'diff-plain';
+			}
 			if (this.formatOptions.showFullFile) {
 				return this.formatOptions.highlightMode === 'stepped' ? 'full-stepped' : 'full-all';
 			}
@@ -729,15 +831,18 @@ export class GitImportView extends ItemView {
 		};
 		new Setting(displayModeSetting)
 			.setName('Code display')
-			.setDesc('What code to show and how to reveal highlights.')
+			.setDesc('What code to show and how to highlight new lines.')
 			.addDropdown(dropdown => dropdown
-				.addOption('diff-all', 'Changed lines only')
+				.addOption('diff-plain', 'Changed lines only')
+				.addOption('diff-all', 'Changed lines, highlight new')
 				.addOption('diff-stepped', 'Changed lines, stepped reveal')
-				.addOption('full-all', 'Complete file')
+				.addOption('full-plain', 'Complete file')
+				.addOption('full-all', 'Complete file, highlight new')
 				.addOption('full-stepped', 'Complete file, stepped reveal')
 				.setValue(getDisplayModeValue())
 				.onChange(value => {
 					this.formatOptions.showFullFile = value.startsWith('full-');
+					this.formatOptions.highlightAddedLines = !value.endsWith('-plain');
 					this.formatOptions.highlightMode = value.endsWith('-stepped') ? 'stepped' : 'all';
 					this.previewCache.clear();
 					this.debouncedUpdatePreview();
@@ -983,11 +1088,26 @@ export class GitImportView extends ItemView {
 		this.previewCache.clear();
 
 		try {
-			this.commits = await this.gitService.getCommits(this.filter);
+			let allCommits = await this.gitService.getCommits(this.filter);
+
+			// Filter commits based on file patterns - only show commits with matching files
+			if (this.includePattern || this.excludePattern) {
+				const filteredCommits: GitCommit[] = [];
+				for (const commit of allCommits) {
+					const files = await this.gitService.getCommitFiles(commit.hash);
+					const hasMatchingFiles = this.filesMatchFilter(files);
+					if (hasMatchingFiles) {
+						filteredCommits.push(commit);
+					}
+				}
+				allCommits = filteredCommits;
+			}
+
+			this.commits = allCommits;
 			this.commitListEl.empty();
 
 			if (this.commits.length === 0) {
-				this.commitListEl.setText('No commits found');
+				this.renderEmptyState(this.commitListEl, 'filter-x', 'No commits match filters');
 				return;
 			}
 
@@ -1000,19 +1120,9 @@ export class GitImportView extends ItemView {
 				const commitEl = this.commitListEl.createDiv({ cls: 'git-import-commit' });
 				if (i === 0) commitEl.addClass('keyboard-focus');
 
-				const checkbox = commitEl.createEl('input', { type: 'checkbox' });
-				checkbox.tabIndex = -1; // Prevent checkbox from stealing focus
-				checkbox.checked = this.selectedCommitHashes.has(commit.hash);
-				checkbox.addEventListener('change', () => {
-					if (checkbox.checked) {
-						this.selectedCommitHashes.add(commit.hash);
-					} else {
-						this.selectedCommitHashes.delete(commit.hash);
-						this.selectedFiles.delete(commit.hash);
-					}
-					this.updateImportButton();
-					this.debouncedUpdatePreview();
-				});
+				// Mark commits that have files selected
+				const hasSelectedFiles = (this.selectedFiles.get(commit.hash)?.size ?? 0) > 0;
+				if (hasSelectedFiles) commitEl.addClass('has-selections');
 
 				const infoEl = commitEl.createDiv({ cls: 'git-import-commit-info' });
 				commitEl.dataset.hash = commit.hash;
@@ -1069,6 +1179,40 @@ export class GitImportView extends ItemView {
 		await this.loadFilesForCommit(commit);
 	}
 
+	/**
+	 * Check if any files in the list match the current include/exclude filters
+	 */
+	private filesMatchFilter(files: GitFileChange[]): boolean {
+		return this.filterFiles(files).length > 0;
+	}
+
+	/**
+	 * Apply include/exclude filters to a list of files
+	 */
+	private filterFiles(files: GitFileChange[]): GitFileChange[] {
+		let result = files;
+
+		if (this.includePattern) {
+			try {
+				const includeRegex = new RegExp(this.includePattern);
+				result = result.filter(f => includeRegex.test(f.path));
+			} catch {
+				// Invalid regex, ignore
+			}
+		}
+
+		if (this.excludePattern) {
+			try {
+				const excludeRegex = new RegExp(this.excludePattern);
+				result = result.filter(f => !excludeRegex.test(f.path));
+			} catch {
+				// Invalid regex, ignore
+			}
+		}
+
+		return result;
+	}
+
 	private async loadFilesForCommit(commit: GitCommit): Promise<void> {
 		if (!this.gitService || !this.fileListEl) return;
 
@@ -1076,27 +1220,8 @@ export class GitImportView extends ItemView {
 		this.fileListEl.setText('Loading files...');
 
 		try {
-			this.currentFiles = await this.gitService.getCommitFilesWithStats(commit.hash);
-
-			// Apply include pattern
-			if (this.includePattern) {
-				try {
-					const includeRegex = new RegExp(this.includePattern);
-					this.currentFiles = this.currentFiles.filter(f => includeRegex.test(f.path));
-				} catch {
-					// Invalid regex, ignore
-				}
-			}
-
-			// Apply exclude pattern
-			if (this.excludePattern) {
-				try {
-					const excludeRegex = new RegExp(this.excludePattern);
-					this.currentFiles = this.currentFiles.filter(f => !excludeRegex.test(f.path));
-				} catch {
-					// Invalid regex, ignore
-				}
-			}
+			const allFiles = await this.gitService.getCommitFilesWithStats(commit.hash);
+			this.currentFiles = this.filterFiles(allFiles);
 
 			this.fileListEl.empty();
 
@@ -1124,10 +1249,10 @@ export class GitImportView extends ItemView {
 					if (checkbox.checked) {
 						selectedForCommit.add(file.path);
 						this.selectedCommitHashes.add(commit.hash);
-						this.updateCommitCheckbox(commit.hash, true);
 					} else {
 						selectedForCommit.delete(file.path);
 					}
+					this.updateCommitHasSelections(commit.hash);
 					this.updateImportButton();
 					this.debouncedUpdatePreview();
 				});
@@ -1203,22 +1328,24 @@ export class GitImportView extends ItemView {
 				return;
 			}
 
-			// Render diff with syntax highlighting
+			// Render diff with syntax highlighting (skip header/meta lines)
 			const preEl = contentEl.createEl('pre');
 			const lines = diffOutput.split('\n');
 
 			for (const line of lines) {
+				// Skip diff header lines (diff, index, ---, +++, @@)
+				if (line.startsWith('diff ') || line.startsWith('index ') ||
+					line.startsWith('---') || line.startsWith('+++') ||
+					line.startsWith('@@')) {
+					continue;
+				}
+
 				const lineEl = preEl.createEl('div', { cls: 'diff-line' });
 
-				if (line.startsWith('+') && !line.startsWith('+++')) {
+				if (line.startsWith('+')) {
 					lineEl.addClass('diff-added');
-				} else if (line.startsWith('-') && !line.startsWith('---')) {
+				} else if (line.startsWith('-')) {
 					lineEl.addClass('diff-removed');
-				} else if (line.startsWith('@@')) {
-					lineEl.addClass('diff-hunk');
-				} else if (line.startsWith('diff ') || line.startsWith('index ') ||
-					line.startsWith('---') || line.startsWith('+++')) {
-					lineEl.addClass('diff-meta');
 				}
 
 				lineEl.setText(line || ' ');
@@ -1238,12 +1365,12 @@ export class GitImportView extends ItemView {
 		}
 	}
 
-	private updateCommitCheckbox(hash: string, checked: boolean): void {
+	private updateCommitHasSelections(hash: string): void {
 		const commitEls = this.commitListEl?.querySelectorAll('.git-import-commit');
 		for (const el of Array.from(commitEls ?? [])) {
 			if ((el as HTMLElement).dataset.hash === hash) {
-				const checkbox = el.querySelector('input[type="checkbox"]') as HTMLInputElement;
-				if (checkbox) checkbox.checked = checked;
+				const hasFiles = (this.selectedFiles.get(hash)?.size ?? 0) > 0;
+				el.classList.toggle('has-selections', hasFiles);
 				break;
 			}
 		}
@@ -1427,24 +1554,30 @@ export class GitImportView extends ItemView {
 		// Parse the markdown content
 		const lines = content.split('\n');
 		let inCodeBlock = false;
+		let codeBlockFenceLength = 0; // Track the fence length to match closing
 		let codeBlockLang = '';
 		let codeBlockHighlights = '';
 		let codeLines: string[] = [];
 
 		for (const line of lines) {
-			// Check for code block start/end
-			if (line.startsWith('```')) {
+			// Check for code block start/end (handles variable-length fences like ``` or ````)
+			const fenceMatch = line.match(/^(`{3,})/);
+			const fenceLength = fenceMatch?.[1]?.length ?? 0;
+
+			if (fenceLength > 0) {
 				if (!inCodeBlock) {
-					// Starting a code block
+					// Starting a code block - track fence length
 					inCodeBlock = true;
+					codeBlockFenceLength = fenceLength;
 					// Extract language and highlight annotation (like ```ts [1-2|3-4])
-					const match = line.match(/^```(\w*)\s*(?:\[([^\]]*)\])?/);
+					const match = line.match(/^`{3,}(\w*)\s*(?:\[([^\]]*)\])?/);
 					codeBlockLang = match?.[1] ?? '';
 					codeBlockHighlights = match?.[2] ?? '';
 					codeLines = [];
-				} else {
-					// Ending a code block
+				} else if (fenceLength >= codeBlockFenceLength && line.trim() === '`'.repeat(fenceLength)) {
+					// Ending a code block - fence must be at least as long and be only backticks
 					inCodeBlock = false;
+					codeBlockFenceLength = 0;
 
 					// Parse highlight groups
 					const highlightGroups = this.parseHighlightGroups(codeBlockHighlights);
@@ -1460,6 +1593,9 @@ export class GitImportView extends ItemView {
 					const preEl = codeContainer.createEl('pre');
 					const codeEl = preEl.createEl('code');
 					this.renderHighlightedCode(codeEl, codeLines.join('\n'), codeBlockLang, highlightGroups);
+				} else {
+					// Inside code block, this is content (nested fence with different length)
+					codeLines.push(line);
 				}
 				continue;
 			}
@@ -1887,6 +2023,66 @@ export class GitImportView extends ItemView {
 			console.error('Copy failed:', error);
 			new Notice('Failed to copy slides. Check console for details.');
 		}
+	}
+
+	private setupResizeHandle(handle: HTMLElement, panel: HTMLElement): void {
+		let isResizing = false;
+		let startX = 0;
+		let startWidth = 0;
+
+		const onMouseMove = (e: MouseEvent) => {
+			if (!isResizing) return;
+			const delta = e.clientX - startX;
+			const newWidth = Math.max(200, Math.min(600, startWidth + delta));
+			panel.style.flex = `0 0 ${newWidth}px`;
+		};
+
+		const onMouseUp = () => {
+			isResizing = false;
+			document.body.classList.remove('is-resizing-panels');
+			document.removeEventListener('mousemove', onMouseMove);
+			document.removeEventListener('mouseup', onMouseUp);
+		};
+
+		handle.addEventListener('mousedown', (e) => {
+			isResizing = true;
+			startX = e.clientX;
+			startWidth = panel.getBoundingClientRect().width;
+			document.body.classList.add('is-resizing-panels');
+			document.addEventListener('mousemove', onMouseMove);
+			document.addEventListener('mouseup', onMouseUp);
+			e.preventDefault();
+		});
+	}
+
+	private setupVerticalResizeHandle(handle: HTMLElement, panel: HTMLElement): void {
+		let isResizing = false;
+		let startY = 0;
+		let startHeight = 0;
+
+		const onMouseMove = (e: MouseEvent) => {
+			if (!isResizing) return;
+			const delta = e.clientY - startY;
+			const newHeight = Math.max(100, Math.min(500, startHeight + delta));
+			panel.style.flex = `0 0 ${newHeight}px`;
+		};
+
+		const onMouseUp = () => {
+			isResizing = false;
+			document.body.classList.remove('is-resizing-panels-vertical');
+			document.removeEventListener('mousemove', onMouseMove);
+			document.removeEventListener('mouseup', onMouseUp);
+		};
+
+		handle.addEventListener('mousedown', (e) => {
+			isResizing = true;
+			startY = e.clientY;
+			startHeight = panel.getBoundingClientRect().height;
+			document.body.classList.add('is-resizing-panels-vertical');
+			document.addEventListener('mousemove', onMouseMove);
+			document.addEventListener('mouseup', onMouseUp);
+			e.preventDefault();
+		});
 	}
 
 	private formatDate(date: Date): string {

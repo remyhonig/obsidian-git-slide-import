@@ -5,6 +5,24 @@
 import type { GitCommit, GitFileDiff, SlideFormatOptions, GeneratedSlide } from './types';
 import { generateHighlightString, formatDiffContent, deindent } from './diff-parser';
 
+/**
+ * Create a code fence that won't break if content contains backticks.
+ * Uses more backticks than the longest sequence found in the content.
+ */
+function createSafeCodeBlock(content: string, langSpec: string): string {
+	// Find the longest sequence of backticks in the content
+	const backtickMatches = content.match(/`+/g);
+	const maxBackticks = backtickMatches
+		? Math.max(...backtickMatches.map(m => m.length))
+		: 0;
+
+	// Use at least 3 backticks, or one more than the longest sequence found
+	const fenceLength = Math.max(3, maxBackticks + 1);
+	const fence = '`'.repeat(fenceLength);
+
+	return `${fence}${langSpec}\n${content.trimEnd()}\n${fence}`;
+}
+
 /** Variables available in templates */
 interface TemplateVariables {
 	authorName: string;
@@ -206,7 +224,7 @@ export class SlideGenerator {
 					}
 
 					const highlightSpec = highlights ? ` [${highlights}]` : '';
-					const codeBlock = '```' + lang + highlightSpec + '\n' + hunkContent.trimEnd() + '\n```';
+					const codeBlock = createSafeCodeBlock(hunkContent, lang + highlightSpec);
 
 					const fileVars: TemplateVariables = {
 						...commitVars,
@@ -373,11 +391,11 @@ export class SlideGenerator {
 			}
 		}
 
-		// Format: ```typescript [1-3|5-7]
+		// Format: ```typescript [1-3|5-7] (with safe fencing for nested backticks)
 		const highlightSpec = highlights ? ` [${highlights}]` : '';
 		const langSpec = `${lang}${highlightSpec}`;
 
-		return '```' + langSpec + '\n' + content.trimEnd() + '\n```';
+		return createSafeCodeBlock(content, langSpec);
 	}
 
 	/**
