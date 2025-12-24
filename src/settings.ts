@@ -4,11 +4,12 @@ import {
 	DEFAULT_COMMIT_DETAILS_TEMPLATE,
 	DEFAULT_SLIDE_TEMPLATE
 } from './git-slides/slide-generator';
-import type { SlideOrganization } from './git-slides/types';
+import type { SlideOrganization, LineChangeDisplay } from './git-slides/types';
 
 export interface SlideFormatDefaults {
 	highlightAddedLines: boolean;
 	highlightMode: 'all' | 'stepped';
+	lineChangeDisplay: LineChangeDisplay;
 	showFullFile: boolean;
 	contextLines: number;
 	includeCommitMessage: boolean;
@@ -27,6 +28,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	formatDefaults: {
 		highlightAddedLines: true,
 		highlightMode: 'stepped',
+		lineChangeDisplay: 'additions-only',
 		showFullFile: false,
 		contextLines: 3,
 		includeCommitMessage: true,

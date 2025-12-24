@@ -223,6 +223,7 @@ export class GitImportView extends ItemView {
 			...defaults,
 			highlightAddedLines: formatDefaults.highlightAddedLines,
 			highlightMode: formatDefaults.highlightMode,
+			lineChangeDisplay: formatDefaults.lineChangeDisplay,
 			showFullFile: formatDefaults.showFullFile,
 			contextLines: formatDefaults.contextLines,
 			includeCommitMessage: formatDefaults.includeCommitMessage,
@@ -822,7 +823,16 @@ export class GitImportView extends ItemView {
 		}
 
 		// Combined code display mode (full file vs diff, highlight style)
-		const displayModeSetting = container.createDiv({ cls: 'git-import-setting' });
+		const displaySetting = container.createDiv({ cls: 'git-import-setting git-import-org-setting' });
+		displaySetting.createEl('div', { cls: 'setting-item-name', text: 'Code display' });
+
+		const displayOptions = displaySetting.createDiv({ cls: 'git-import-org-options' });
+
+		// Colors for display mode diagrams
+		const lineColor = '#888';
+		const highlightColor = '#4ade80';
+		const stepColor = '#4a9eff';
+
 		const getDisplayModeValue = (): string => {
 			if (!this.formatOptions.highlightAddedLines) {
 				return this.formatOptions.showFullFile ? 'full-plain' : 'diff-plain';
@@ -832,24 +842,188 @@ export class GitImportView extends ItemView {
 			}
 			return this.formatOptions.highlightMode === 'stepped' ? 'diff-stepped' : 'diff-all';
 		};
-		new Setting(displayModeSetting)
-			.setName('Code display')
-			.setDesc('What code to show and how to highlight new lines.')
-			.addDropdown(dropdown => dropdown
-				.addOption('diff-plain', 'Changed lines only')
-				.addOption('diff-all', 'Changed lines, highlight new')
-				.addOption('diff-stepped', 'Changed lines, stepped reveal')
-				.addOption('full-plain', 'Complete file')
-				.addOption('full-all', 'Complete file, highlight new')
-				.addOption('full-stepped', 'Complete file, stepped reveal')
-				.setValue(getDisplayModeValue())
-				.onChange(value => {
-					this.formatOptions.showFullFile = value.startsWith('full-');
-					this.formatOptions.highlightAddedLines = !value.endsWith('-plain');
-					this.formatOptions.highlightMode = value.endsWith('-stepped') ? 'stepped' : 'all';
-					this.previewCache.clear();
-					this.debouncedUpdatePreview();
-				}));
+
+		const displayModes: { value: string; label: string; desc: string; svg: string }[] = [
+			{
+				value: 'diff-plain',
+				label: 'Changes only',
+				desc: 'Show only the changed lines, no highlighting.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<rect x="4" y="4" width="32" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="10" width="28" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="16" width="36" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="22" width="24" height="3" rx="1" fill="${lineColor}"/>
+				</svg>`
+			},
+			{
+				value: 'diff-all',
+				label: 'Highlight new',
+				desc: 'Show changed lines with new lines highlighted.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<rect x="4" y="4" width="32" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="10" width="28" height="3" rx="1" fill="${highlightColor}"/>
+					<rect x="4" y="16" width="36" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="22" width="24" height="3" rx="1" fill="${highlightColor}"/>
+				</svg>`
+			},
+			{
+				value: 'diff-stepped',
+				label: 'Stepped reveal',
+				desc: 'Changed lines with new lines revealed one by one.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<rect x="4" y="4" width="32" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="10" width="28" height="3" rx="1" fill="${highlightColor}"/>
+					<circle cx="72" cy="11.5" r="5" fill="${stepColor}"/>
+					<text x="72" y="14" text-anchor="middle" fill="white" font-size="8" font-weight="bold">1</text>
+					<rect x="4" y="16" width="36" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="22" width="24" height="3" rx="1" fill="${highlightColor}"/>
+					<circle cx="72" cy="23.5" r="5" fill="${stepColor}"/>
+					<text x="72" y="26" text-anchor="middle" fill="white" font-size="8" font-weight="bold">2</text>
+				</svg>`
+			},
+			{
+				value: 'full-plain',
+				label: 'Full file',
+				desc: 'Show complete file content, no highlighting.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<rect x="4" y="2" width="20" height="2" rx="1" fill="${lineColor}" opacity="0.4"/>
+					<rect x="4" y="6" width="32" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="11" width="28" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="16" width="36" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="21" width="24" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="26" width="18" height="2" rx="1" fill="${lineColor}" opacity="0.4"/>
+				</svg>`
+			},
+			{
+				value: 'full-all',
+				label: 'Full + highlight',
+				desc: 'Complete file with new lines highlighted.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<rect x="4" y="2" width="20" height="2" rx="1" fill="${lineColor}" opacity="0.4"/>
+					<rect x="4" y="6" width="32" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="11" width="28" height="3" rx="1" fill="${highlightColor}"/>
+					<rect x="4" y="16" width="36" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="21" width="24" height="3" rx="1" fill="${highlightColor}"/>
+					<rect x="4" y="26" width="18" height="2" rx="1" fill="${lineColor}" opacity="0.4"/>
+				</svg>`
+			},
+			{
+				value: 'full-stepped',
+				label: 'Full + stepped',
+				desc: 'Complete file with new lines revealed one by one.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<rect x="4" y="2" width="20" height="2" rx="1" fill="${lineColor}" opacity="0.4"/>
+					<rect x="4" y="6" width="32" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="11" width="28" height="3" rx="1" fill="${highlightColor}"/>
+					<circle cx="72" cy="12.5" r="5" fill="${stepColor}"/>
+					<text x="72" y="15" text-anchor="middle" fill="white" font-size="8" font-weight="bold">1</text>
+					<rect x="4" y="16" width="36" height="3" rx="1" fill="${lineColor}"/>
+					<rect x="4" y="21" width="24" height="3" rx="1" fill="${highlightColor}"/>
+					<circle cx="72" cy="22.5" r="5" fill="${stepColor}"/>
+					<text x="72" y="25" text-anchor="middle" fill="white" font-size="8" font-weight="bold">2</text>
+					<rect x="4" y="26" width="18" height="2" rx="1" fill="${lineColor}" opacity="0.4"/>
+				</svg>`
+			}
+		];
+
+		const currentDisplayMode = getDisplayModeValue();
+
+		for (const mode of displayModes) {
+			const option = displayOptions.createDiv({
+				cls: `git-import-org-option ${currentDisplayMode === mode.value ? 'is-selected' : ''}`
+			});
+
+			// SVG diagram
+			const svgContainer = option.createDiv({ cls: 'git-import-org-svg' });
+			const parser = new DOMParser();
+			const svgDoc = parser.parseFromString(mode.svg, 'image/svg+xml');
+			const svgEl = svgDoc.documentElement;
+			if (svgEl instanceof SVGElement) {
+				svgContainer.appendChild(svgEl);
+			}
+
+			// Label and description
+			const textContainer = option.createDiv({ cls: 'git-import-org-text' });
+			textContainer.createDiv({ cls: 'git-import-org-label', text: mode.label });
+			textContainer.createDiv({ cls: 'git-import-org-desc', text: mode.desc });
+
+			option.addEventListener('click', () => {
+				displayOptions.querySelectorAll('.git-import-org-option').forEach(el => el.removeClass('is-selected'));
+				option.addClass('is-selected');
+				this.formatOptions.showFullFile = mode.value.startsWith('full-');
+				this.formatOptions.highlightAddedLines = !mode.value.endsWith('-plain');
+				this.formatOptions.highlightMode = mode.value.endsWith('-stepped') ? 'stepped' : 'all';
+				this.previewCache.clear();
+				this.debouncedUpdatePreview();
+			});
+		}
+
+		// Line change display setting
+		const lineChangeSetting = container.createDiv({ cls: 'git-import-setting git-import-org-setting' });
+		lineChangeSetting.createEl('div', { cls: 'setting-item-name', text: 'Line changes' });
+
+		const lineChangeOptions = lineChangeSetting.createDiv({ cls: 'git-import-org-options' });
+
+		// Colors for line change diagrams
+		const addColor = '#4ade80';
+		const removeColor = '#f87171';
+
+		const lineChangeModes: { value: string; label: string; desc: string; svg: string }[] = [
+			{
+				value: 'additions-only',
+				label: 'Additions only',
+				desc: 'Show only new lines. Removed lines are hidden.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<text x="4" y="9" fill="${addColor}" font-size="10" font-weight="bold">+</text>
+					<rect x="14" y="4" width="28" height="3" rx="1" fill="${addColor}"/>
+					<text x="4" y="17" fill="${addColor}" font-size="10" font-weight="bold">+</text>
+					<rect x="14" y="12" width="32" height="3" rx="1" fill="${addColor}"/>
+					<text x="4" y="25" fill="${addColor}" font-size="10" font-weight="bold">+</text>
+					<rect x="14" y="20" width="24" height="3" rx="1" fill="${addColor}"/>
+				</svg>`
+			},
+			{
+				value: 'full-diff',
+				label: 'Full diff',
+				desc: 'Show both additions and deletions with +/- markers.',
+				svg: `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="28" viewBox="0 0 80 28">
+					<text x="4" y="9" fill="${removeColor}" font-size="10" font-weight="bold">−</text>
+					<rect x="14" y="4" width="28" height="3" rx="1" fill="${removeColor}"/>
+					<text x="4" y="17" fill="${addColor}" font-size="10" font-weight="bold">+</text>
+					<rect x="14" y="12" width="32" height="3" rx="1" fill="${addColor}"/>
+					<text x="4" y="25" fill="${addColor}" font-size="10" font-weight="bold">+</text>
+					<rect x="14" y="20" width="24" height="3" rx="1" fill="${addColor}"/>
+				</svg>`
+			}
+		];
+
+		for (const mode of lineChangeModes) {
+			const option = lineChangeOptions.createDiv({
+				cls: `git-import-org-option ${this.formatOptions.lineChangeDisplay === mode.value ? 'is-selected' : ''}`
+			});
+
+			// SVG diagram
+			const svgContainer = option.createDiv({ cls: 'git-import-org-svg' });
+			const parser = new DOMParser();
+			const svgDoc = parser.parseFromString(mode.svg, 'image/svg+xml');
+			const svgEl = svgDoc.documentElement;
+			if (svgEl instanceof SVGElement) {
+				svgContainer.appendChild(svgEl);
+			}
+
+			// Label and description
+			const textContainer = option.createDiv({ cls: 'git-import-org-text' });
+			textContainer.createDiv({ cls: 'git-import-org-label', text: mode.label });
+			textContainer.createDiv({ cls: 'git-import-org-desc', text: mode.desc });
+
+			option.addEventListener('click', () => {
+				lineChangeOptions.querySelectorAll('.git-import-org-option').forEach(el => el.removeClass('is-selected'));
+				option.addClass('is-selected');
+				this.formatOptions.lineChangeDisplay = mode.value as 'additions-only' | 'full-diff';
+				this.previewCache.clear();
+				this.debouncedUpdatePreview();
+			});
+		}
 
 		// Context lines
 		const contextSetting = container.createDiv({ cls: 'git-import-setting' });
@@ -1334,6 +1508,7 @@ export class GitImportView extends ItemView {
 			// Render diff with syntax highlighting (skip header/meta lines)
 			const preEl = contentEl.createEl('pre');
 			const lines = diffOutput.split('\n');
+			const lineChangeDisplay = this.formatOptions.lineChangeDisplay;
 
 			for (const line of lines) {
 				// Skip diff header lines (diff, index, ---, +++, @@)
@@ -1341,6 +1516,13 @@ export class GitImportView extends ItemView {
 					line.startsWith('---') || line.startsWith('+++') ||
 					line.startsWith('@@')) {
 					continue;
+				}
+
+				// Handle removed lines based on display mode
+				if (line.startsWith('-')) {
+					if (lineChangeDisplay === 'additions-only') {
+						continue; // Skip removed lines entirely
+					}
 				}
 
 				const lineEl = preEl.createEl('div', { cls: 'diff-line' });

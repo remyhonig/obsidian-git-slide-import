@@ -201,7 +201,8 @@ export class SlideGenerator {
 					const hunkLabel = diff.hunks.length > 1 ? ` (hunk ${hunkIdx + 1}/${diff.hunks.length})` : '';
 
 					// Generate code block for just this hunk
-					const hunkContent = formatDiffContent([hunk], false);
+					const includeRemoved = this.options.lineChangeDisplay !== 'additions-only';
+					const hunkContent = formatDiffContent([hunk], includeRemoved, this.options.lineChangeDisplay);
 					const lang = diff.language;
 
 					// Calculate highlights for this hunk
@@ -210,7 +211,7 @@ export class SlideGenerator {
 						const addedLines: number[] = [];
 						let lineNum = 1;
 						for (const line of hunk.lines) {
-							if (line.type === 'removed') continue;
+							if (line.type === 'removed' && !includeRemoved) continue;
 							if (line.type === 'added') {
 								addedLines.push(lineNum);
 							}
@@ -384,10 +385,11 @@ export class SlideGenerator {
 			}
 		} else {
 			// Show only diff content (formatDiffContent already deindents)
-			content = formatDiffContent(diff.hunks, false);
+			const includeRemoved = this.options.lineChangeDisplay !== 'additions-only';
+			content = formatDiffContent(diff.hunks, includeRemoved, this.options.lineChangeDisplay);
 			if (this.options.highlightAddedLines && diff.hunks.length > 0) {
 				// Recalculate line numbers for the extracted content
-				highlights = this.calculateDiffHighlights(diff);
+				highlights = this.calculateDiffHighlights(diff, includeRemoved);
 			}
 		}
 
@@ -402,7 +404,7 @@ export class SlideGenerator {
 	 * Calculate highlight line numbers for extracted diff content
 	 * (when showing just the diff, line numbers are relative to the extracted content)
 	 */
-	private calculateDiffHighlights(diff: GitFileDiff): string {
+	private calculateDiffHighlights(diff: GitFileDiff, includeRemoved: boolean = false): string {
 		const addedLineNumbers: number[] = [];
 		let currentLine = 1;
 
@@ -410,7 +412,7 @@ export class SlideGenerator {
 			const hunk = diff.hunks[hunkIdx]!;
 
 			for (const line of hunk.lines) {
-				if (line.type === 'removed') continue; // Removed lines are not shown
+				if (line.type === 'removed' && !includeRemoved) continue;
 
 				if (line.type === 'added') {
 					addedLineNumbers.push(currentLine);
@@ -629,6 +631,7 @@ export function createDefaultFormatOptions(): SlideFormatOptions {
 		showLineNumbers: true,
 		highlightAddedLines: true,
 		highlightMode: 'stepped',
+		lineChangeDisplay: 'additions-only',
 		includeCommitMessage: true,
 		includeFileSummary: true,
 		includeAuthorDate: true,

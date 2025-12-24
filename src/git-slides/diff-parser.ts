@@ -2,7 +2,7 @@
  * Parse unified diff format into structured data
  */
 
-import type { DiffHunk } from './types';
+import type { DiffHunk, LineChangeDisplay } from './types';
 
 /**
  * Parse unified diff output into structured hunks
@@ -178,7 +178,8 @@ export function deindent(text: string): string {
  */
 export function formatDiffContent(
 	hunks: DiffHunk[],
-	includeRemoved: boolean = false
+	includeRemoved: boolean = false,
+	displayMode: LineChangeDisplay = 'additions-only'
 ): string {
 	const outputLines: string[] = [];
 
@@ -187,7 +188,21 @@ export function formatDiffContent(
 
 		for (const line of hunk.lines) {
 			if (line.type === 'removed' && !includeRemoved) continue;
-			outputLines.push(line.content);
+
+			let content = line.content;
+
+			// Add prefix markers for full-diff mode
+			if (displayMode === 'full-diff') {
+				if (line.type === 'added') {
+					content = '+ ' + content;
+				} else if (line.type === 'removed') {
+					content = '- ' + content;
+				} else {
+					content = '  ' + content;
+				}
+			}
+
+			outputLines.push(content);
 		}
 
 		// Add separator between hunks if more than one

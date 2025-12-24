@@ -62,11 +62,15 @@ export interface CommitFilter {
 /** How to organize slides */
 export type SlideOrganization = 'flat' | 'grouped' | 'progressive' | 'per-hunk';
 
+/** How to display line changes */
+export type LineChangeDisplay = 'additions-only' | 'full-diff';
+
 /** Slide generation configuration */
 export interface SlideFormatOptions {
 	showLineNumbers: boolean;
 	highlightAddedLines: boolean;
 	highlightMode: 'all' | 'stepped';
+	lineChangeDisplay: LineChangeDisplay;
 	includeCommitMessage: boolean;
 	includeFileSummary: boolean;
 	includeAuthorDate: boolean;
