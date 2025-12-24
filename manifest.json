@@ -1,7 +1,7 @@
 {
 	"id": "obsidian-git-slide-import",
 	"name": "Git Slide Import",
-	"version": "1.0.0",
+	"version": "1.0.3",
 	"minAppVersion": "0.15.0",
 	"description": "Import git commits, diffs, and source code into Advanced Slides format for storytelling about code changes",
 	"author": "Remy Honig",
