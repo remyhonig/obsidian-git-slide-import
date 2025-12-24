@@ -1881,11 +1881,22 @@ export class GitImportView extends ItemView {
 		// Slide number badge
 		slideEl.createDiv({ cls: 'slide-number', text: String(slideNumber) });
 
+		// Separate speaker notes from content
+		// Speaker notes start with "note:" on its own line
+		const noteMatch = content.match(/\n\s*note:\s*([\s\S]*)$/i);
+		let slideContent = content;
+		let speakerNotes = '';
+
+		if (noteMatch) {
+			slideContent = content.slice(0, noteMatch.index);
+			speakerNotes = noteMatch[1]?.trim() ?? '';
+		}
+
 		// Content area
 		const contentEl = slideEl.createDiv({ cls: 'slide-content' });
 
 		// Parse the markdown content
-		const lines = content.split('\n');
+		const lines = slideContent.split('\n');
 		let inCodeBlock = false;
 		let codeBlockFenceLength = 0; // Track the fence length to match closing
 		let codeBlockLang = '';
@@ -1988,6 +1999,13 @@ export class GitImportView extends ItemView {
 					text: line.trim()
 				});
 			}
+		}
+
+		// Render speaker notes if present
+		if (speakerNotes) {
+			const notesEl = slideEl.createDiv({ cls: 'slide-speaker-notes' });
+			notesEl.createDiv({ cls: 'slide-speaker-notes-label', text: 'Speaker Notes' });
+			notesEl.createDiv({ cls: 'slide-speaker-notes-content', text: speakerNotes });
 		}
 	}
 
