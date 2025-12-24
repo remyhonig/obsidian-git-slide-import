@@ -14,6 +14,7 @@ export interface SlideFormatDefaults {
 	contextLines: number;
 	includeCommitMessage: boolean;
 	includeFileSummary: boolean;
+	messageBodyAsSpeakerNotes: boolean;
 	slideOrganization: SlideOrganization;
 	commitDetailsTemplate: string;
 	slideTemplate: string;
@@ -39,6 +40,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 		contextLines: 3,
 		includeCommitMessage: true,
 		includeFileSummary: true,
+		messageBodyAsSpeakerNotes: false,
 		slideOrganization: 'flat',
 		commitDetailsTemplate: DEFAULT_COMMIT_DETAILS_TEMPLATE,
 		slideTemplate: DEFAULT_SLIDE_TEMPLATE,

@@ -17,8 +17,8 @@ export default class GitSlideImportPlugin extends Plugin {
 
 		// Command opens new tab
 		this.addCommand({
-			id: 'import-git-slides',
-			name: 'Import Git commits as slides',
+			id: 'open-repository',
+			name: 'Open repository...',
 			callback: () => { void this.activateView(); }
 		});
 

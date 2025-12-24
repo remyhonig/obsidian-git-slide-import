@@ -111,7 +111,7 @@ export class GitImportView extends ItemView {
 
 	// State
 	private repoPath: string | null = null;
-	private repoName: string = 'Git Import';
+	private repoName: string = 'Git Slide Import';
 	private gitService: GitService | null = null;
 	private branches: string[] = [];
 	private commits: GitCommit[] = [];
@@ -149,11 +149,12 @@ export class GitImportView extends ItemView {
 	private isGeneratingPreview = false;
 
 	// UI element references
-	private repoBtn: HTMLButtonElement | null = null;
+	private filterSectionEl: HTMLElement | null = null;
 	private branchSelectEl: HTMLSelectElement | null = null;
 	private selectionPanelEl: HTMLElement | null = null;
 	private commitPanelEl: HTMLElement | null = null;
 	private filePanelEl: HTMLElement | null = null;
+	private previewPanelEl: HTMLElement | null = null;
 	private commitListEl: HTMLElement | null = null;
 	private fileListEl: HTMLElement | null = null;
 	private fileCommitMessageEl: HTMLElement | null = null;
@@ -209,6 +210,7 @@ export class GitImportView extends ItemView {
 		this.plugin.settings.formatDefaults.lineChangeDisplay = this.formatOptions.lineChangeDisplay;
 		this.plugin.settings.formatDefaults.showFullFile = this.formatOptions.showFullFile;
 		this.plugin.settings.formatDefaults.contextLines = this.formatOptions.contextLines;
+		this.plugin.settings.formatDefaults.messageBodyAsSpeakerNotes = this.formatOptions.messageBodyAsSpeakerNotes;
 		this.plugin.settings.formatDefaults.slideOrganization = this.formatOptions.slideOrganization;
 		this.plugin.settings.formatDefaults.commitDetailsTemplate = this.formatOptions.commitDetailsTemplate;
 		this.plugin.settings.formatDefaults.slideTemplate = this.formatOptions.slideTemplate;
@@ -260,6 +262,7 @@ export class GitImportView extends ItemView {
 			contextLines: formatDefaults.contextLines,
 			includeCommitMessage: formatDefaults.includeCommitMessage,
 			includeFileSummary: formatDefaults.includeFileSummary,
+			messageBodyAsSpeakerNotes: formatDefaults.messageBodyAsSpeakerNotes,
 			slideOrganization: formatDefaults.slideOrganization,
 			commitDetailsTemplate: formatDefaults.commitDetailsTemplate,
 			slideTemplate: formatDefaults.slideTemplate,
@@ -410,13 +413,10 @@ export class GitImportView extends ItemView {
 
 	private toggleCurrentSelection(): void {
 		if (this.focusedColumn === 'commits') {
-			// Space on commit = select it and move focus to files
+			// Space on commit = select all files for this commit
 			const commit = this.commits[this.focusedCommitIndex];
 			if (commit) {
-				void this.selectCommit(commit);
-				this.focusedColumn = 'files';
-				this.focusedFileIndex = 0;
-				this.updateFocusHighlight();
+				this.selectAllFilesForCommit(commit);
 			}
 		} else if (this.focusedColumn === 'files') {
 			const file = this.currentFiles[this.focusedFileIndex];
@@ -466,9 +466,13 @@ export class GitImportView extends ItemView {
 		this.markdownPreviewEl?.removeClass('is-hidden');
 	}
 
-	private renderEmptyState(container: HTMLElement, icon: string, message: string): void {
+	private renderEmptyState(container: HTMLElement, icon: string, message: string, onClick?: () => void): void {
 		container.empty();
 		const emptyState = container.createDiv({ cls: 'git-import-empty-state' });
+		if (onClick) {
+			emptyState.addClass('is-clickable');
+			emptyState.addEventListener('click', onClick);
+		}
 		const iconEl = emptyState.createDiv({ cls: 'git-import-empty-icon' });
 		setIcon(iconEl, icon);
 		emptyState.createDiv({ cls: 'git-import-empty-message', text: message });
@@ -567,21 +571,16 @@ export class GitImportView extends ItemView {
 
 		// Four-panel content area
 		this.buildPanels(contentEl);
+
+		// Disable panels until a repository is selected
+		this.updateDisabledState();
 	}
 
 	private buildFilterSection(container: HTMLElement): void {
-		const section = container.createDiv({ cls: 'git-import-filters' });
-
-		// Repository selector button (shows repo name when selected)
-		const repoGroup = section.createDiv({ cls: 'git-import-filter-group' });
-		this.repoBtn = repoGroup.createEl('button', {
-			text: 'Select repository...',
-			cls: 'git-import-repo-btn'
-		});
-		this.repoBtn.addEventListener('click', () => { void this.selectRepository(); });
+		this.filterSectionEl = container.createDiv({ cls: 'git-import-filters' });
 
 		// Branch selector with icon
-		const branchGroup = section.createDiv({ cls: 'git-import-filter-group' });
+		const branchGroup = this.filterSectionEl.createDiv({ cls: 'git-import-filter-group' });
 		const branchIcon = branchGroup.createSpan({ cls: 'git-import-branch-icon' });
 		setIcon(branchIcon, 'git-branch');
 		this.branchSelectEl = branchGroup.createEl('select');
@@ -592,7 +591,7 @@ export class GitImportView extends ItemView {
 		});
 
 		// Date range picker
-		const dateGroup = section.createDiv({ cls: 'git-import-filter-group' });
+		const dateGroup = this.filterSectionEl.createDiv({ cls: 'git-import-filter-group' });
 		this.dateInputEl = dateGroup.createEl('input', {
 			type: 'date',
 			value: this.formatDateForInput(this.filter.sinceDate),
@@ -624,7 +623,7 @@ export class GitImportView extends ItemView {
 		});
 
 		// Preset selector
-		const presetGroup = section.createDiv({ cls: 'git-import-filter-group' });
+		const presetGroup = this.filterSectionEl.createDiv({ cls: 'git-import-filter-group' });
 		const presetSelect = presetGroup.createEl('select');
 		for (const preset of FILTER_PRESETS) {
 			const opt = presetSelect.createEl('option', { text: preset.name, value: preset.name });
@@ -644,7 +643,7 @@ export class GitImportView extends ItemView {
 		});
 
 		// Focus pattern (primary filter - what you care about)
-		const focusGroup = section.createDiv({ cls: 'git-import-filter-group git-import-filter-regex' });
+		const focusGroup = this.filterSectionEl.createDiv({ cls: 'git-import-filter-group git-import-filter-regex' });
 		focusGroup.createEl('label', { text: 'Focus on:' });
 		this.includeInputEl = focusGroup.createEl('input', {
 			type: 'text',
@@ -660,7 +659,7 @@ export class GitImportView extends ItemView {
 		});
 
 		// Exclude pattern (secondary - refinement, collapsible)
-		const excludeWrapper = section.createDiv({ cls: 'git-import-exclude-wrapper' });
+		const excludeWrapper = this.filterSectionEl.createDiv({ cls: 'git-import-exclude-wrapper' });
 
 		// Toggle button for exclude section
 		const excludeToggle = excludeWrapper.createEl('button', {
@@ -726,7 +725,9 @@ export class GitImportView extends ItemView {
 		this.commitPanelEl.createDiv({ cls: 'git-import-panel-header', text: 'Commits' });
 		this.commitListEl = this.commitPanelEl.createDiv({ cls: 'git-import-panel-content' });
 		this.commitListEl.setAttribute('tabindex', '0');
-		this.renderEmptyState(this.commitListEl, 'folder-open', 'Select a repository');
+		this.renderEmptyState(this.commitListEl, 'folder-open', 'Select a repository', () => {
+			void this.selectRepository();
+		});
 
 		// Vertical resize handle between commits and files
 		const verticalResizeHandle = this.selectionPanelEl.createDiv({ cls: 'git-import-resize-handle-vertical' });
@@ -747,10 +748,10 @@ export class GitImportView extends ItemView {
 		this.fileDiffPreviewEl.createDiv({ cls: 'git-import-file-diff-content' });
 
 		// Column 2: Preview with tabs
-		const previewPanel = panels.createDiv({ cls: 'git-import-panel git-import-panel-preview' });
+		this.previewPanelEl = panels.createDiv({ cls: 'git-import-panel git-import-panel-preview' });
 
 		// Tabbed header
-		const previewHeader = previewPanel.createDiv({ cls: 'git-import-panel-header git-import-preview-header' });
+		const previewHeader = this.previewPanelEl.createDiv({ cls: 'git-import-panel-header git-import-preview-header' });
 		const tabsEl = previewHeader.createDiv({ cls: 'git-import-preview-tabs' });
 
 		this.slidesTabEl = tabsEl.createEl('button', {
@@ -772,7 +773,7 @@ export class GitImportView extends ItemView {
 			this.switchToMarkdownTab();
 		});
 
-		this.previewEl = previewPanel.createDiv({ cls: 'git-import-panel-content git-import-preview-content' });
+		this.previewEl = this.previewPanelEl.createDiv({ cls: 'git-import-panel-content git-import-preview-content' });
 		this.previewEl.setAttribute('tabindex', '0');
 
 		// Slides preview (visual)
@@ -1115,6 +1116,20 @@ export class GitImportView extends ItemView {
 					this.debouncedSaveSettings();
 				}));
 
+		// Speaker notes from commit body
+		const speakerNotesSetting = container.createDiv({ cls: 'git-import-setting' });
+		new Setting(speakerNotesSetting)
+			.setName('Commit body as speaker notes')
+			.setDesc('Add commit message body as reveal.js speaker notes.')
+			.addToggle(toggle => toggle
+				.setValue(this.formatOptions.messageBodyAsSpeakerNotes)
+				.onChange(value => {
+					this.formatOptions.messageBodyAsSpeakerNotes = value;
+					this.previewCache.clear();
+					this.debouncedUpdatePreview();
+					this.debouncedSaveSettings();
+				}));
+
 		// Templates section header
 		container.createEl('h4', { text: 'Templates', cls: 'git-import-section-header' });
 
@@ -1244,16 +1259,12 @@ export class GitImportView extends ItemView {
 
 		// Update tab title with repo name
 		const segments = path.split(/[/\\]/);
-		this.repoName = segments[segments.length - 1] || 'Git Import';
+		this.repoName = segments[segments.length - 1] || 'Git Slide Import';
 		// Trigger Obsidian to refresh the tab header
 		(this.leaf as { updateHeader?: () => void }).updateHeader?.();
 
-		if (this.repoBtn) {
-			// Show last part of path in button
-			this.repoBtn.setText(this.repoName);
-			this.repoBtn.setAttribute('title', path); // Full path on hover
-			this.repoBtn.addClass('has-repo');
-		}
+		// Enable the UI now that a repository is selected
+		this.updateDisabledState();
 
 		// Reset all state for new repository
 		this.previewCache.clear();
@@ -1640,6 +1651,43 @@ export class GitImportView extends ItemView {
 		}
 	}
 
+	private selectAllFilesForCommit(commit: GitCommit): void {
+		const commitHash = commit.hash;
+
+		// Initialize selected files set for this commit if needed
+		if (!this.selectedFiles.has(commitHash)) {
+			this.selectedFiles.set(commitHash, new Set());
+		}
+		const selectedForCommit = this.selectedFiles.get(commitHash)!;
+
+		// Check if all files are already selected
+		const allSelected = this.currentFiles.length > 0 &&
+			this.currentFiles.every(f => selectedForCommit.has(f.path));
+
+		if (allSelected) {
+			// Deselect all files
+			selectedForCommit.clear();
+			for (const file of this.currentFiles) {
+				this.updateFileCheckbox(file.path, false);
+			}
+			// Remove commit from selected if no files remain
+			if (selectedForCommit.size === 0) {
+				this.selectedCommitHashes.delete(commitHash);
+			}
+		} else {
+			// Select all files
+			for (const file of this.currentFiles) {
+				selectedForCommit.add(file.path);
+				this.updateFileCheckbox(file.path, true);
+			}
+			this.selectedCommitHashes.add(commitHash);
+		}
+
+		this.updateCommitHasSelections(commitHash);
+		this.updateImportButton();
+		this.debouncedUpdatePreview();
+	}
+
 	private updateCommitHasSelections(hash: string): void {
 		const commitEls = this.commitListEl?.querySelectorAll('.git-import-commit');
 		for (const el of Array.from(commitEls ?? [])) {
@@ -1663,6 +1711,16 @@ export class GitImportView extends ItemView {
 		}
 
 		this.importBtn.disabled = !hasSelection;
+	}
+
+	private updateDisabledState(): void {
+		const isDisabled = this.repoPath === null;
+
+		// Toggle disabled state on panels (except commits which has the repo selector)
+		this.filterSectionEl?.toggleClass('is-disabled', isDisabled);
+		this.filePanelEl?.toggleClass('is-disabled', isDisabled);
+		this.previewPanelEl?.toggleClass('is-disabled', isDisabled);
+		this.renderPanelEl?.toggleClass('is-disabled', isDisabled);
 	}
 
 	private async generatePreview(): Promise<void> {

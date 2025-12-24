@@ -144,20 +144,6 @@
 	padding: 0 4px;
 }
 
-/* Repo button */
-.git-import-repo-btn {
-	font-family: var(--font-monospace);
-	max-width: 200px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.git-import-repo-btn.has-repo {
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
-}
-
 /* Three-column layout */
 .git-import-panels {
 	display: flex;
@@ -323,6 +309,44 @@ body.is-resizing-panels-vertical * {
 
 .git-import-empty-message {
 	font-size: 0.9em;
+}
+
+.git-import-empty-state.is-clickable {
+	cursor: pointer;
+	border-radius: 8px;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+	border: 2px dashed var(--interactive-accent);
+	margin: 10px;
+	height: calc(100% - 20px);
+}
+
+.git-import-empty-state.is-clickable:hover {
+	background-color: var(--background-modifier-hover);
+	border-style: solid;
+}
+
+.git-import-empty-state.is-clickable:hover .git-import-empty-icon {
+	opacity: 0.8;
+}
+
+/* Disabled overlay for panels when no repository is selected */
+.git-import-filters.is-disabled,
+.git-import-section.is-disabled,
+.git-import-panel.is-disabled {
+	position: relative;
+	pointer-events: none;
+}
+
+.git-import-filters.is-disabled::after,
+.git-import-section.is-disabled::after,
+.git-import-panel.is-disabled::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: var(--background-primary);
+	opacity: 0.6;
+	z-index: 10;
+	border-radius: inherit;
 }
 
 .git-import-panel-header {

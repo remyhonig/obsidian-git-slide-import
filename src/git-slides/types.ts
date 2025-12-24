@@ -74,6 +74,7 @@ export interface SlideFormatOptions {
 	includeCommitMessage: boolean;
 	includeFileSummary: boolean;
 	includeAuthorDate: boolean;
+	messageBodyAsSpeakerNotes: boolean;
 	showFullFile: boolean;
 	contextLines: number;
 	slideOrganization: SlideOrganization;

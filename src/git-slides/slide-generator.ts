@@ -161,11 +161,14 @@ export class SlideGenerator {
 				};
 
 				const content = this.renderTemplate(this.options.slideTemplate, slideVars);
+				const notes = this.options.messageBodyAsSpeakerNotes && commitVars.messageBody
+					? commitVars.messageBody
+					: null;
 
 				slides.push({
 					title: filePath,
 					content,
-					notes: null
+					notes
 				});
 			}
 		}
@@ -237,11 +240,14 @@ export class SlideGenerator {
 					};
 
 					const content = this.renderTemplate(this.options.slideTemplate, fileVars);
+					const notes = this.options.messageBodyAsSpeakerNotes && commitVars.messageBody
+						? commitVars.messageBody
+						: null;
 
 					slides.push({
 						title: diff.path,
 						content,
-						notes: null
+						notes
 					});
 				}
 			}
@@ -258,11 +264,14 @@ export class SlideGenerator {
 	private generateCommitOnlySlide(commit: GitCommit): GeneratedSlide {
 		const vars = this.getCommitVariables(commit);
 		const content = this.renderTemplate(DEFAULT_COMMIT_ONLY_TEMPLATE, vars);
+		const notes = this.options.messageBodyAsSpeakerNotes && vars.messageBody
+			? vars.messageBody
+			: null;
 
 		return {
 			title: vars.messageTitle,
 			content,
-			notes: null
+			notes
 		};
 	}
 
@@ -290,11 +299,14 @@ export class SlideGenerator {
 		};
 
 		const content = this.renderTemplate(this.options.slideTemplate, slideVars);
+		const notes = this.options.messageBodyAsSpeakerNotes && commitVars.messageBody
+			? commitVars.messageBody
+			: null;
 
 		return {
 			title: fileVars.fileName ?? diff.path,
 			content,
-			notes: null
+			notes
 		};
 	}
 
@@ -328,11 +340,15 @@ export class SlideGenerator {
 			parts.push(fileSlide);
 		}
 
-		// Join with vertical slide separator (---)
+		// Join with vertical slide separator (--)
+		const notes = this.options.messageBodyAsSpeakerNotes && commitVars.messageBody
+			? commitVars.messageBody
+			: null;
+
 		return {
 			title: commitVars.messageTitle,
 			content: parts.join('\n\n--\n\n'),
-			notes: null
+			notes
 		};
 	}
 
@@ -361,10 +377,14 @@ export class SlideGenerator {
 			parts.push(this.generateCodeBlock(diff));
 		}
 
+		const notes = this.options.messageBodyAsSpeakerNotes && commitVars.messageBody
+			? commitVars.messageBody
+			: null;
+
 		return {
 			title: commitVars.messageTitle,
 			content: parts.join('\n\n'),
-			notes: null
+			notes
 		};
 	}
 
@@ -678,6 +698,7 @@ export function createDefaultFormatOptions(): SlideFormatOptions {
 		includeCommitMessage: true,
 		includeFileSummary: true,
 		includeAuthorDate: true,
+		messageBodyAsSpeakerNotes: false,
 		showFullFile: false,
 		contextLines: 3,
 		slideOrganization: 'flat',
